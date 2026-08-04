@@ -40,7 +40,9 @@ func runProfileList(cmd *cobra.Command, args []string) error {
 	out := cmd.OutOrStdout()
 
 	if len(file.Profiles) == 0 {
-		_, err := fmt.Fprintln(out, "No profiles registered. Run `slio auth login` to add one.")
+		// Guidance for a human, not a zero-row result: a caller parsing the
+		// listing should see an empty stdout.
+		_, err := fmt.Fprintln(cmd.ErrOrStderr(), "No profiles registered. Run `slio auth login` to add one.")
 		return err
 	}
 
@@ -81,6 +83,6 @@ func runProfileUse(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "Default profile set to %q.\n", name)
+	_, err = fmt.Fprintf(cmd.ErrOrStderr(), "Default profile set to %q.\n", name)
 	return err
 }

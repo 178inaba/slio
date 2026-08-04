@@ -70,7 +70,7 @@ func TestRunHistoryViaSlioTokenIncludesThreadPermalink(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	testCmd, out := newTestCmd(t)
+	testCmd, out, _ := newTestCmd(t)
 	if err := runHistory(testCmd, []string{"C1"}); err != nil {
 		t.Fatalf("runHistory() error = %v", err)
 	}

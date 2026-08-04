@@ -37,9 +37,11 @@ func init() {
 
 func runAuthLogin(cmd *cobra.Command, args []string) error {
 	in := bufio.NewReader(cmd.InOrStdin())
-	out := cmd.OutOrStdout()
+	// Prompts and status messages go to stderr so stdout stays reserved for
+	// machine-readable output. auth login has none, so it writes no stdout.
+	errOut := cmd.ErrOrStderr()
 
-	if _, err := fmt.Fprint(out, "Paste your Slack user OAuth token (xoxp-...): "); err != nil {
+	if _, err := fmt.Fprint(errOut, "Paste your Slack user OAuth token (xoxp-...): "); err != nil {
 		return err
 	}
 	token, err := readLine(in)
@@ -73,7 +75,7 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 
 	var name string
 	if existingName != "" {
-		aborted, err := confirmOrAbort(out, in, fmt.Sprintf(
+		aborted, err := confirmOrAbort(errOut, in, fmt.Sprintf(
 			"Profile %q is already registered for %s. Overwrite the stored token? [y/N]: ",
 			existingName, result.Host))
 		if err != nil {
@@ -85,7 +87,7 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 		name = existingName
 	} else {
 		proposed := proposedProfileName(result.Host)
-		if _, err := fmt.Fprintf(out, "Detected workspace %s. Register as profile %q? "+
+		if _, err := fmt.Fprintf(errOut, "Detected workspace %s. Register as profile %q? "+
 			"Press Enter to accept, or type a different name: ", result.Host, proposed); err != nil {
 			return err
 		}
@@ -99,7 +101,7 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 		}
 
 		if other, ok := file.Profiles[name]; ok && other.Host != result.Host {
-			aborted, err := confirmOrAbort(out, in, fmt.Sprintf(
+			aborted, err := confirmOrAbort(errOut, in, fmt.Sprintf(
 				"Profile %q is already registered for a different workspace (%s). Overwrite it? [y/N]: ",
 				name, other.Host))
 			if err != nil {
@@ -120,11 +122,11 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if _, err := fmt.Fprintf(out, "Registered profile %q for %s.\n", name, result.Host); err != nil {
+	if _, err := fmt.Fprintf(errOut, "Registered profile %q for %s.\n", name, result.Host); err != nil {
 		return err
 	}
 	if setDefault {
-		if _, err := fmt.Fprintln(out, "Set as the default profile."); err != nil {
+		if _, err := fmt.Fprintln(errOut, "Set as the default profile."); err != nil {
 			return err
 		}
 	}

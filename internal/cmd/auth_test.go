@@ -31,15 +31,23 @@ func stubSlackClientFactory(t *testing.T, srv *httptest.Server) {
 	t.Cleanup(func() { slackClientFactory = orig })
 }
 
+// runAuthLoginForTest drives runAuthLogin with scripted stdin and returns
+// what it wrote to stderr. stdout is asserted empty for every caller: the
+// command is interactive only, so nothing it prints belongs on the stream
+// that carries machine-readable output.
 func runAuthLoginForTest(t *testing.T, stdin string) (string, error) {
 	t.Helper()
 	testCmd := &cobra.Command{}
 	testCmd.SetIn(strings.NewReader(stdin))
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 	testCmd.SetOut(&out)
+	testCmd.SetErr(&errOut)
 
 	err := runAuthLogin(testCmd, nil)
-	return out.String(), err
+	if out.Len() > 0 {
+		t.Errorf("stdout = %q, want empty", out.String())
+	}
+	return errOut.String(), err
 }
 
 func TestAuthLoginRegistersNewProfile(t *testing.T) {
@@ -47,9 +55,20 @@ func TestAuthLoginRegistersNewProfile(t *testing.T) {
 	srv := newAuthTestServer(t, "myws.slack.com", "T1")
 	stubSlackClientFactory(t, srv)
 
-	out, err := runAuthLoginForTest(t, "xoxp-abc\n\n")
+	stderr, err := runAuthLoginForTest(t, "xoxp-abc\n\n")
 	if err != nil {
-		t.Fatalf("runAuthLogin() error = %v, output = %s", err, out)
+		t.Fatalf("runAuthLogin() error = %v, stderr = %s", err, stderr)
+	}
+
+	for _, want := range []string{
+		"Paste your Slack user OAuth token",
+		"Register as profile",
+		`Registered profile "myws"`,
+		"Set as the default profile.",
+	} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want it to contain %q", stderr, want)
+		}
 	}
 
 	f, err := config.Load()
@@ -150,9 +169,9 @@ func TestAuthLoginReRegisterSameWorkspaceConfirmed(t *testing.T) {
 		t.Fatalf("seed config Save() error = %v", err)
 	}
 
-	out, err := runAuthLoginForTest(t, "xoxp-new\ny\n")
+	stderr, err := runAuthLoginForTest(t, "xoxp-new\ny\n")
 	if err != nil {
-		t.Fatalf("runAuthLogin() error = %v, output = %s", err, out)
+		t.Fatalf("runAuthLogin() error = %v, stderr = %s", err, stderr)
 	}
 
 	f, err := config.Load()
@@ -183,12 +202,12 @@ func TestAuthLoginReRegisterSameWorkspaceDeclined(t *testing.T) {
 		t.Fatalf("seed config Save() error = %v", err)
 	}
 
-	out, err := runAuthLoginForTest(t, "xoxp-new\nn\n")
+	stderr, err := runAuthLoginForTest(t, "xoxp-new\nn\n")
 	if err != nil {
-		t.Fatalf("runAuthLogin() error = %v, output = %s", err, out)
+		t.Fatalf("runAuthLogin() error = %v, stderr = %s", err, stderr)
 	}
-	if !strings.Contains(out, "Aborted") {
-		t.Errorf("output = %q, want mention of Aborted", out)
+	if !strings.Contains(stderr, "Aborted") {
+		t.Errorf("stderr = %q, want mention of Aborted", stderr)
 	}
 
 	f, err := config.Load()
