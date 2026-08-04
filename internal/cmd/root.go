@@ -3,9 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 const defaultTimeoutSeconds = 90
@@ -52,6 +55,17 @@ func validateFormatFlag(cmd *cobra.Command, args []string) error {
 // Execute runs the root command.
 func Execute() error {
 	return rootCmd.Execute()
+}
+
+// terminalFile reports the underlying *os.File of a command input stream
+// and whether it is a real terminal. Non-*os.File readers report
+// (nil, false); tests use them as scriptable stdin.
+func terminalFile(in io.Reader) (*os.File, bool) {
+	f, ok := in.(*os.File)
+	if !ok {
+		return nil, false
+	}
+	return f, term.IsTerminal(int(f.Fd()))
 }
 
 // commandContext returns a context bound to --timeout. A zero timeout means

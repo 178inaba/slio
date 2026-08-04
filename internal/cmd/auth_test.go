@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -129,6 +130,50 @@ func TestAuthLoginRejectsNonUserToken(t *testing.T) {
 		if len(f.Profiles) != 0 {
 			t.Errorf("profiles = %+v, want none saved", f.Profiles)
 		}
+	}
+}
+
+func TestAuthLoginRejectsNonTTYStdin(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	// A pipe is an *os.File that is not a terminal — what stdin looks like
+	// under `echo ... | slio auth login`. The masked prompt cannot run there,
+	// so the command must refuse before reading anything.
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error = %v", err)
+	}
+	t.Cleanup(func() { r.Close() })
+	if _, err := w.WriteString("xoxp-piped\n"); err != nil {
+		t.Fatalf("writing the token to the pipe: %v", err)
+	}
+	w.Close()
+
+	slackClientFactory = func(token string) *slackclient.Client {
+		t.Fatal("slackClientFactory should not be called without a terminal")
+		return nil
+	}
+	t.Cleanup(func() { slackClientFactory = defaultSlackClientFactory })
+
+	testCmd := &cobra.Command{}
+	testCmd.SetIn(r)
+	var out, errOut bytes.Buffer
+	testCmd.SetOut(&out)
+	testCmd.SetErr(&errOut)
+
+	err = runAuthLogin(testCmd, nil)
+	if err == nil {
+		t.Fatal("runAuthLogin() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "SLIO_TOKEN") {
+		t.Errorf("error = %v, want it to point at SLIO_TOKEN", err)
+	}
+
+	f, loadErr := config.Load()
+	if loadErr != nil {
+		t.Fatalf("config.Load() error = %v", loadErr)
+	}
+	if len(f.Profiles) != 0 {
+		t.Errorf("profiles = %+v, want none saved", f.Profiles)
 	}
 }
 

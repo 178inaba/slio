@@ -2,13 +2,16 @@ package cmd
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/178inaba/slio/internal/config"
 	"github.com/178inaba/slio/internal/slackclient"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // defaultSlackClientFactory builds a production Slack client. Tests
@@ -36,15 +39,24 @@ func init() {
 }
 
 func runAuthLogin(cmd *cobra.Command, args []string) error {
-	in := bufio.NewReader(cmd.InOrStdin())
 	// Prompts and status messages go to stderr so stdout stays reserved for
 	// machine-readable output. auth login has none, so it writes no stdout.
 	errOut := cmd.ErrOrStderr()
 
-	if _, err := fmt.Fprint(errOut, "Paste your Slack user OAuth token (xoxp-...): "); err != nil {
-		return err
+	// Masking the token needs a real terminal. Non-TTY callers (agents, CI)
+	// are pointed at the env var instead; a non-*os.File reader is the test
+	// seam and reads answers line by line.
+	stdinFile, isTTY := terminalFile(cmd.InOrStdin())
+	if stdinFile != nil && !isTTY {
+		return errors.New("auth login is interactive and needs a terminal; set SLIO_TOKEN instead")
 	}
-	token, err := readLine(in)
+
+	// Safe to wrap even on the masked path: ReadPassword reads the file
+	// descriptor directly, and this reader consumes nothing until the later
+	// prompts, so the two never disagree about buffered bytes.
+	in := bufio.NewReader(cmd.InOrStdin())
+
+	token, err := promptToken(errOut, in, stdinFile)
 	if err != nil {
 		return fmt.Errorf("read token: %w", err)
 	}
@@ -87,11 +99,9 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 		name = existingName
 	} else {
 		proposed := proposedProfileName(result.Host)
-		if _, err := fmt.Fprintf(errOut, "Detected workspace %s. Register as profile %q? "+
-			"Press Enter to accept, or type a different name: ", result.Host, proposed); err != nil {
-			return err
-		}
-		typed, err := readLine(in)
+		typed, err := promptLine(errOut, in, fmt.Sprintf(
+			"Detected workspace %s. Register as profile %q? "+
+				"Press Enter to accept, or type a different name: ", result.Host, proposed))
 		if err != nil {
 			return fmt.Errorf("read profile name: %w", err)
 		}
@@ -148,11 +158,40 @@ func readLine(r *bufio.Reader) (string, error) {
 	return strings.TrimSpace(line), nil
 }
 
-func confirm(out io.Writer, in *bufio.Reader, prompt string) (bool, error) {
+// promptLine writes the prompt to out and reads one trimmed line.
+func promptLine(out io.Writer, in *bufio.Reader, prompt string) (string, error) {
 	if _, err := fmt.Fprint(out, prompt); err != nil {
-		return false, err
+		return "", err
 	}
-	line, err := readLine(in)
+	return readLine(in)
+}
+
+// promptToken reads the token without echoing it. A non-nil stdinFile is
+// guaranteed to be a terminal by the guard in runAuthLogin; the test seam
+// falls back to a plain line read.
+func promptToken(out io.Writer, in *bufio.Reader, stdinFile *os.File) (string, error) {
+	const prompt = "Paste your Slack user OAuth token (xoxp-...): "
+	if stdinFile == nil {
+		return promptLine(out, in, prompt)
+	}
+
+	if _, err := fmt.Fprint(out, prompt); err != nil {
+		return "", err
+	}
+	token, err := term.ReadPassword(int(stdinFile.Fd()))
+	if err != nil {
+		return "", err
+	}
+	// ReadPassword leaves the newline the user typed unechoed, so emit one to
+	// keep the next message off the prompt line.
+	if _, err := fmt.Fprintln(out); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(token)), nil
+}
+
+func confirm(out io.Writer, in *bufio.Reader, prompt string) (bool, error) {
+	line, err := promptLine(out, in, prompt)
 	if err != nil {
 		return false, err
 	}
