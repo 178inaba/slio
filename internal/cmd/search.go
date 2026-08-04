@@ -1,8 +1,11 @@
 package cmd
 
 import (
-	"errors"
+	"fmt"
+	"time"
 
+	"github.com/178inaba/slio/internal/cache"
+	"github.com/178inaba/slio/internal/format"
 	"github.com/spf13/cobra"
 )
 
@@ -23,5 +26,41 @@ func init() {
 }
 
 func runSearch(cmd *cobra.Command, args []string) error {
-	return errors.New("search: not implemented yet")
+	query := args[0]
+
+	ctx, cancel := commandContext()
+	defer cancel()
+
+	creds, _, cacheKey, err := resolveWorkspace(ctx, "")
+	if err != nil {
+		return err
+	}
+	client := slackClientFactory(creds.Token)
+
+	store, err := cache.Open(cacheKey)
+	if err != nil {
+		return err
+	}
+
+	matches, total, err := client.SearchMessages(ctx, query, searchLimitFlag)
+	if err != nil {
+		return err
+	}
+
+	resolver := newUserResolver(ctx, client, store, time.Now())
+	messages := make([]format.Message, 0, len(matches))
+	for _, m := range matches {
+		fm, err := messageFromSearchMatch(m, resolver.resolve)
+		if err != nil {
+			return err
+		}
+		messages = append(messages, fm)
+	}
+
+	var notice string
+	if more := total - len(messages); more > 0 {
+		notice = fmt.Sprintf("%d more results", more)
+	}
+
+	return writeMessages(cmd, messages, resolver.resolve, "", notice)
 }
