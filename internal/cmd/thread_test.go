@@ -40,13 +40,13 @@ func TestRunThreadRendersFullThread(t *testing.T) {
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
 		"conversations.replies": func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, `{"ok":true,"messages":[`+
+			_, _ = fmt.Fprint(w, `{"ok":true,"messages":[`+
 				`{"type":"message","user":"U1","text":"parent message","ts":"1234567890.000001","channel":"C1","reply_count":1},`+
 				`{"type":"message","user":"U1","text":"a reply","ts":"1234567890.000002","channel":"C1"}`+
 				`],"has_more":false,"response_metadata":{"next_cursor":""}}`)
 		},
 		"users.info": func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, `{"ok":true,"user":{"id":"U1","profile":{"display_name":"Alice"}}}`)
+			_, _ = fmt.Fprint(w, `{"ok":true,"user":{"id":"U1","profile":{"display_name":"Alice"}}}`)
 		},
 	}))
 	t.Cleanup(srv.Close)
@@ -97,13 +97,13 @@ func TestRunThreadDownloadSavesAttachmentAndPrintsPath(t *testing.T) {
 	stubSlackClientFactory(t, srv)
 
 	mux.HandleFunc("/conversations.replies", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, `{"ok":true,"messages":[{"type":"message","user":"U1","text":"hi","ts":"1234567890.000001","channel":"C1",`+
+		_, _ = fmt.Fprintf(w, `{"ok":true,"messages":[{"type":"message","user":"U1","text":"hi","ts":"1234567890.000001","channel":"C1",`+
 			`"files":[{"id":"F1","name":"report.txt","filetype":"text","size":13,"url_private":"%s/files-pri/T1-F1/report.txt"}]}],"has_more":false}`,
 			srv.URL)
 	})
 	mux.HandleFunc("/files-pri/T1-F1/report.txt", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprint(w, "file contents")
+		_, _ = fmt.Fprint(w, "file contents")
 	})
 
 	threadDownloadFlag = true

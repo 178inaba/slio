@@ -40,8 +40,8 @@ func runProfileList(cmd *cobra.Command, args []string) error {
 	out := cmd.OutOrStdout()
 
 	if len(file.Profiles) == 0 {
-		fmt.Fprintln(out, "No profiles registered. Run `slio auth login` to add one.")
-		return nil
+		_, err := fmt.Fprintln(out, "No profiles registered. Run `slio auth login` to add one.")
+		return err
 	}
 
 	names := make([]string, 0, len(file.Profiles))
@@ -52,10 +52,14 @@ func runProfileList(cmd *cobra.Command, args []string) error {
 
 	for _, name := range names {
 		p := file.Profiles[name]
+		var err error
 		if name == file.DefaultProfile {
-			fmt.Fprintf(out, "%s\t%s\t(default)\n", name, p.Host)
+			_, err = fmt.Fprintf(out, "%s\t%s\t(default)\n", name, p.Host)
 		} else {
-			fmt.Fprintf(out, "%s\t%s\n", name, p.Host)
+			_, err = fmt.Fprintf(out, "%s\t%s\n", name, p.Host)
+		}
+		if err != nil {
+			return err
 		}
 	}
 	return nil
@@ -77,6 +81,6 @@ func runProfileUse(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Default profile set to %q.\n", name)
-	return nil
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "Default profile set to %q.\n", name)
+	return err
 }

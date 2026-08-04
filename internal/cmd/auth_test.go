@@ -16,7 +16,7 @@ import (
 func newAuthTestServer(t *testing.T, host, teamID string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, `{"ok":true,"url":"https://%s/","team_id":"%s"}`, host, teamID)
+		_, _ = fmt.Fprintf(w, `{"ok":true,"url":"https://%s/","team_id":"%s"}`, host, teamID)
 	}))
 	t.Cleanup(srv.Close)
 	return srv
@@ -116,7 +116,7 @@ func TestAuthLoginRejectsNonUserToken(t *testing.T) {
 func TestAuthLoginAuthTestFailureDoesNotSave(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"ok":false,"error":"invalid_auth"}`)
+		_, _ = fmt.Fprint(w, `{"ok":false,"error":"invalid_auth"}`)
 	}))
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)

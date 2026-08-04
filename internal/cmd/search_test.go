@@ -22,7 +22,7 @@ func TestRunSearchPassesQueryThroughUnchanged(t *testing.T) {
 			if err := r.ParseForm(); err == nil {
 				gotQuery = r.Form.Get("query")
 			}
-			fmt.Fprint(w, `{"ok":true,"messages":{"matches":[`+
+			_, _ = fmt.Fprint(w, `{"ok":true,"messages":{"matches":[`+
 				`{"text":"hi","ts":"1.000001","permalink":"https://myws.slack.com/archives/C1/p1000001"}`+
 				`],"total":1,"pagination":{"page_count":1}}}`)
 		},
@@ -57,7 +57,7 @@ func TestRunSearchTrailingMoreResultsNotice(t *testing.T) {
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
 		"search.messages": func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, `{"ok":true,"messages":{"matches":[`+
+			_, _ = fmt.Fprint(w, `{"ok":true,"messages":{"matches":[`+
 				`{"text":"hi","ts":"1.000001","permalink":"https://myws.slack.com/archives/C1/p1000001"}`+
 				`],"total":5,"pagination":{"page_count":1}}}`)
 		},

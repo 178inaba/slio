@@ -63,12 +63,14 @@ func runChannelList(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(out, string(data))
-		return nil
+		_, err = fmt.Fprintln(out, string(data))
+		return err
 	}
 
 	for _, c := range channels {
-		fmt.Fprintf(out, "#%s\t%s\n", c.Name, c.ID)
+		if _, err := fmt.Fprintf(out, "#%s\t%s\n", c.Name, c.ID); err != nil {
+			return err
+		}
 	}
 	return nil
 }

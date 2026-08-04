@@ -69,17 +69,25 @@ func writeMessages(cmd *cobra.Command, messages []format.Message, resolve format
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(out, string(encoded))
-		return nil
+		_, err = fmt.Fprintln(out, string(encoded))
+		return err
 	}
 
 	if leadingNotice != "" {
-		fmt.Fprintln(out, leadingNotice)
-		fmt.Fprintln(out)
+		if _, err := fmt.Fprintln(out, leadingNotice); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(out); err != nil {
+			return err
+		}
 	}
-	fmt.Fprintln(out, format.RenderMarkdownList(messages, resolve))
+	if _, err := fmt.Fprintln(out, format.RenderMarkdownList(messages, resolve)); err != nil {
+		return err
+	}
 	if trailingNotice != "" {
-		fmt.Fprintln(out, trailingNotice)
+		if _, err := fmt.Fprintln(out, trailingNotice); err != nil {
+			return err
+		}
 	}
 	return nil
 }

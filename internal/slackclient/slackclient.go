@@ -226,7 +226,7 @@ func (c *Client) SearchMessages(ctx context.Context, query string, limit int) (m
 
 		all = append(all, resp.Matches...)
 		total = resp.Total
-		if page >= resp.Pagination.PageCount || len(resp.Matches) == 0 {
+		if page >= resp.PageCount || len(resp.Matches) == 0 {
 			break
 		}
 		page++
@@ -262,7 +262,7 @@ func (c *Client) downloadFileOnce(ctx context.Context, urlPrivate, destPath stri
 	if err != nil {
 		return fmt.Errorf("download %s: %w", urlPrivate, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		retryAfter := time.Second
@@ -289,10 +289,15 @@ func (c *Client) downloadFileOnce(ctx context.Context, urlPrivate, destPath stri
 	if err != nil {
 		return fmt.Errorf("create %s: %w", destPath, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // best-effort safety net for the early-return paths above
 
 	if _, err := io.Copy(f, resp.Body); err != nil {
 		return fmt.Errorf("write %s: %w", destPath, err)
+	}
+	// Closing explicitly (rather than relying only on the deferred close)
+	// surfaces a flush failure, which io.Copy succeeding wouldn't catch.
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("finalize %s: %w", destPath, err)
 	}
 	return nil
 }

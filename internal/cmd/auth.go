@@ -39,7 +39,9 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 	in := bufio.NewReader(cmd.InOrStdin())
 	out := cmd.OutOrStdout()
 
-	fmt.Fprint(out, "Paste your Slack user OAuth token (xoxp-...): ")
+	if _, err := fmt.Fprint(out, "Paste your Slack user OAuth token (xoxp-...): "); err != nil {
+		return err
+	}
 	token, err := readLine(in)
 	if err != nil {
 		return fmt.Errorf("read token: %w", err)
@@ -78,14 +80,18 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if !ok {
-			fmt.Fprintln(out, "Aborted.")
+			if _, err := fmt.Fprintln(out, "Aborted."); err != nil {
+				return err
+			}
 			return nil
 		}
 		name = existingName
 	} else {
 		proposed := proposedProfileName(result.Host)
-		fmt.Fprintf(out, "Detected workspace %s. Register as profile %q? "+
-			"Press Enter to accept, or type a different name: ", result.Host, proposed)
+		if _, err := fmt.Fprintf(out, "Detected workspace %s. Register as profile %q? "+
+			"Press Enter to accept, or type a different name: ", result.Host, proposed); err != nil {
+			return err
+		}
 		typed, err := readLine(in)
 		if err != nil {
 			return fmt.Errorf("read profile name: %w", err)
@@ -103,7 +109,9 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 				return err
 			}
 			if !ok {
-				fmt.Fprintln(out, "Aborted.")
+				if _, err := fmt.Fprintln(out, "Aborted."); err != nil {
+					return err
+				}
 				return nil
 			}
 		}
@@ -118,9 +126,13 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(out, "Registered profile %q for %s.\n", name, result.Host)
+	if _, err := fmt.Fprintf(out, "Registered profile %q for %s.\n", name, result.Host); err != nil {
+		return err
+	}
 	if setDefault {
-		fmt.Fprintln(out, "Set as the default profile.")
+		if _, err := fmt.Fprintln(out, "Set as the default profile."); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -141,7 +153,9 @@ func readLine(r *bufio.Reader) (string, error) {
 }
 
 func confirm(out io.Writer, in *bufio.Reader, prompt string) (bool, error) {
-	fmt.Fprint(out, prompt)
+	if _, err := fmt.Fprint(out, prompt); err != nil {
+		return false, err
+	}
 	line, err := readLine(in)
 	if err != nil {
 		return false, err

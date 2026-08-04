@@ -20,7 +20,7 @@ func TestRunChannelListMarkdown(t *testing.T) {
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
 		"users.conversations": func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C1","name":"general"},{"id":"C2","name":"random"}]}`)
+			_, _ = fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C1","name":"general"},{"id":"C2","name":"random"}]}`)
 		},
 	}))
 	t.Cleanup(srv.Close)
@@ -46,7 +46,7 @@ func TestRunChannelListJSON(t *testing.T) {
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
 		"users.conversations": func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C1","name":"general"}]}`)
+			_, _ = fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C1","name":"general"}]}`)
 		},
 	}))
 	t.Cleanup(srv.Close)
@@ -78,7 +78,7 @@ func TestRunChannelListPopulatesCacheForNameResolution(t *testing.T) {
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
 		"users.conversations": func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C1","name":"general"}]}`)
+			_, _ = fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C1","name":"general"}]}`)
 		},
 	}))
 	t.Cleanup(srv.Close)

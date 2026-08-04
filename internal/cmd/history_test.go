@@ -18,7 +18,7 @@ func TestRunHistoryByChannelIDOldestToNewestOrder(t *testing.T) {
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
 		"conversations.history": func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, `{"ok":true,"messages":[`+
+			_, _ = fmt.Fprint(w, `{"ok":true,"messages":[`+
 				`{"type":"message","text":"newest","ts":"1.000002"},`+
 				`{"type":"message","text":"oldest","ts":"1.000001"}`+
 				`],"has_more":false}`)
@@ -53,7 +53,7 @@ func TestRunHistoryTruncationNoticeLeadsOutput(t *testing.T) {
 			// happened to have exactly that many on hand, and it's up to
 			// ConversationHistory to notice len(all) > limit and report
 			// hasMore itself.
-			fmt.Fprint(w, `{"ok":true,"messages":[`+
+			_, _ = fmt.Fprint(w, `{"ok":true,"messages":[`+
 				`{"type":"message","text":"a","ts":"1.000003"},`+
 				`{"type":"message","text":"b","ts":"1.000002"},`+
 				`{"type":"message","text":"c","ts":"1.000001"}`+
@@ -92,11 +92,11 @@ func TestRunHistoryByNameResolvesViaCache(t *testing.T) {
 	var historyChannelParam string
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
 		"users.conversations": func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C42","name":"general"}]}`)
+			_, _ = fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C42","name":"general"}]}`)
 		},
 		"conversations.history": func(w http.ResponseWriter, r *http.Request) {
 			historyChannelParam = r.FormValue("channel")
-			fmt.Fprint(w, `{"ok":true,"messages":[{"type":"message","text":"hi","ts":"1.000001"}],"has_more":false}`)
+			_, _ = fmt.Fprint(w, `{"ok":true,"messages":[{"type":"message","text":"hi","ts":"1.000001"}],"has_more":false}`)
 		},
 	}))
 	t.Cleanup(srv.Close)
@@ -119,7 +119,7 @@ func TestRunHistoryUnknownChannelName(t *testing.T) {
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
 		"users.conversations": func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C42","name":"general"}]}`)
+			_, _ = fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C42","name":"general"}]}`)
 		},
 	}))
 	t.Cleanup(srv.Close)
@@ -140,7 +140,7 @@ func TestRunHistoryJSONFormatIsValidWithNotice(t *testing.T) {
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
 		"conversations.history": func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, `{"ok":true,"messages":[`+
+			_, _ = fmt.Fprint(w, `{"ok":true,"messages":[`+
 				`{"type":"message","text":"a","ts":"1.000002"},`+
 				`{"type":"message","text":"b","ts":"1.000001"}`+
 				`],"has_more":false}`)
