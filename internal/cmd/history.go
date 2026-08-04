@@ -67,21 +67,14 @@ func runHistory(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	var oldestTs, latestTs string
 	rangeSet := historySinceFlag != "" || historyUntilFlag != ""
-	if historySinceFlag != "" {
-		t, err := parse.ParseTime(historySinceFlag, now)
-		if err != nil {
-			return fmt.Errorf("--since: %w", err)
-		}
-		oldestTs = format.FormatTs(t)
+	oldestTs, err := parseTimeFlag("--since", historySinceFlag, now)
+	if err != nil {
+		return err
 	}
-	if historyUntilFlag != "" {
-		t, err := parse.ParseTime(historyUntilFlag, now)
-		if err != nil {
-			return fmt.Errorf("--until: %w", err)
-		}
-		latestTs = format.FormatTs(t)
+	latestTs, err := parseTimeFlag("--until", historyUntilFlag, now)
+	if err != nil {
+		return err
 	}
 
 	msgs, hasMore, err := client.ConversationHistory(ctx, channelID, oldestTs, latestTs, historyLimitFlag)
@@ -113,6 +106,20 @@ func runHistory(cmd *cobra.Command, args []string) error {
 	}
 
 	return writeMessages(cmd, messages, resolver.resolve, notice, "")
+}
+
+// parseTimeFlag parses a --since/--until value into a Slack ts bound, or
+// returns "" unset when raw is empty. name (e.g. "--since") labels the
+// error on a parse failure.
+func parseTimeFlag(name, raw string, now time.Time) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	t, err := parse.ParseTime(raw, now)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", name, err)
+	}
+	return format.FormatTs(t), nil
 }
 
 // resolveChannelID resolves a "#name" channel argument to a channel ID via

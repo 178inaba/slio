@@ -97,27 +97,29 @@ func authorFor(m slack.Message, resolve func(string) string) string {
 	return m.User
 }
 
-// quotedBlocksFromMsg extracts a best-effort text rendering of bot
+// quotedBlocksFrom extracts a best-effort text rendering of bot
 // attachments and section blocks, for display as blockquotes. Other block
 // types (dividers, images, actions, rich text) are skipped rather than
-// fully re-implemented.
-func quotedBlocksFromMsg(m slack.Message) []string {
-	var blocks []string
-	for _, a := range m.Attachments {
+// fully re-implemented. Shared by messageFromMsg and messageFromSearchMatch:
+// slack.Message and slack.SearchMessage carry identically-typed
+// Attachments/Blocks fields.
+func quotedBlocksFrom(attachments []slack.Attachment, blocks slack.Blocks) []string {
+	var quoted []string
+	for _, a := range attachments {
 		text := a.Text
 		if text == "" {
 			text = a.Fallback
 		}
 		if text != "" {
-			blocks = append(blocks, text)
+			quoted = append(quoted, text)
 		}
 	}
-	for _, b := range m.Blocks.BlockSet {
+	for _, b := range blocks.BlockSet {
 		if section, ok := b.(*slack.SectionBlock); ok && section.Text != nil && section.Text.Text != "" {
-			blocks = append(blocks, section.Text.Text)
+			quoted = append(quoted, section.Text.Text)
 		}
 	}
-	return blocks
+	return quoted
 }
 
 // buildThreadPermalink constructs a thread permalink locally from a
@@ -135,9 +137,8 @@ func buildThreadPermalink(host, channel, ts string) string {
 // practice, but the field is optional in the API) are reported as
 // metadata only, matching the default (non-download) rendering.
 func downloadFiles(ctx context.Context, client *slackclient.Client, destDir string, files []slack.File) ([]format.FileInfo, error) {
-	out := make([]format.FileInfo, len(files))
+	out := filesFromMsg(files)
 	for i, f := range files {
-		out[i] = format.FileInfo{Name: f.Name, Type: f.Filetype, Size: int64(f.Size)}
 		if f.URLPrivate == "" {
 			continue
 		}
@@ -189,7 +190,7 @@ func messageFromMsg(m slack.Message, host string, resolve func(string) string, w
 		Edited:       m.Edited != nil,
 		Reactions:    reactionsFromMsg(m.Reactions),
 		Files:        filesFromMsg(m.Files),
-		QuotedBlocks: quotedBlocksFromMsg(m),
+		QuotedBlocks: quotedBlocksFrom(m.Attachments, m.Blocks),
 	}
 	if withReplyInfo && m.ReplyCount > 0 {
 		out.ReplyCount = m.ReplyCount
@@ -218,28 +219,12 @@ func messageFromSearchMatch(m slack.SearchMessage, resolve func(string) string) 
 		}
 	}
 
-	var quoted []string
-	for _, a := range m.Attachments {
-		text := a.Text
-		if text == "" {
-			text = a.Fallback
-		}
-		if text != "" {
-			quoted = append(quoted, text)
-		}
-	}
-	for _, b := range m.Blocks.BlockSet {
-		if section, ok := b.(*slack.SectionBlock); ok && section.Text != nil && section.Text.Text != "" {
-			quoted = append(quoted, section.Text.Text)
-		}
-	}
-
 	return format.Message{
 		Ts:           m.Timestamp,
 		Time:         t,
 		Author:       author,
 		Text:         m.Text,
 		Permalink:    m.Permalink,
-		QuotedBlocks: quoted,
+		QuotedBlocks: quotedBlocksFrom(m.Attachments, m.Blocks),
 	}, nil
 }

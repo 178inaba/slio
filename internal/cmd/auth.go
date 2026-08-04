@@ -73,16 +73,13 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 
 	var name string
 	if existingName != "" {
-		ok, err := confirm(out, in, fmt.Sprintf(
+		aborted, err := confirmOrAbort(out, in, fmt.Sprintf(
 			"Profile %q is already registered for %s. Overwrite the stored token? [y/N]: ",
 			existingName, result.Host))
 		if err != nil {
 			return err
 		}
-		if !ok {
-			if _, err := fmt.Fprintln(out, "Aborted."); err != nil {
-				return err
-			}
+		if aborted {
 			return nil
 		}
 		name = existingName
@@ -102,16 +99,13 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 		}
 
 		if other, ok := file.Profiles[name]; ok && other.Host != result.Host {
-			ok, err := confirm(out, in, fmt.Sprintf(
+			aborted, err := confirmOrAbort(out, in, fmt.Sprintf(
 				"Profile %q is already registered for a different workspace (%s). Overwrite it? [y/N]: ",
 				name, other.Host))
 			if err != nil {
 				return err
 			}
-			if !ok {
-				if _, err := fmt.Fprintln(out, "Aborted."); err != nil {
-					return err
-				}
+			if aborted {
 				return nil
 			}
 		}
@@ -162,4 +156,21 @@ func confirm(out io.Writer, in *bufio.Reader, prompt string) (bool, error) {
 	}
 	line = strings.ToLower(line)
 	return line == "y" || line == "yes", nil
+}
+
+// confirmOrAbort wraps confirm with the "declined -> print Aborted. and
+// report aborted=true" flow shared by both overwrite-confirmation prompts
+// in runAuthLogin.
+func confirmOrAbort(out io.Writer, in *bufio.Reader, prompt string) (aborted bool, err error) {
+	ok, err := confirm(out, in, prompt)
+	if err != nil {
+		return false, err
+	}
+	if ok {
+		return false, nil
+	}
+	if _, err := fmt.Fprintln(out, "Aborted."); err != nil {
+		return false, err
+	}
+	return true, nil
 }
