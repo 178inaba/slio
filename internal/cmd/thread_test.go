@@ -1,0 +1,110 @@
+package cmd
+
+import (
+	"bytes"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/178inaba/slio/internal/config"
+	"github.com/spf13/cobra"
+)
+
+func newSlackAPIMux(handlers map[string]http.HandlerFunc) http.Handler {
+	mux := http.NewServeMux()
+	for path, h := range handlers {
+		mux.HandleFunc("/"+path, h)
+	}
+	return mux
+}
+
+func seedProfile(t *testing.T, host string) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	f := &config.File{
+		DefaultProfile: "myws",
+		Profiles: map[string]config.Profile{
+			"myws": {Token: "xoxp-1", Host: host, TeamID: "T1"},
+		},
+	}
+	if err := f.Save(); err != nil {
+		t.Fatalf("seed config Save() error = %v", err)
+	}
+}
+
+func TestRunThreadRendersFullThread(t *testing.T) {
+	seedProfile(t, "myws.slack.com")
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
+		"conversations.replies": func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, `{"ok":true,"messages":[`+
+				`{"type":"message","user":"U1","text":"parent message","ts":"1234567890.000001","channel":"C1","reply_count":1},`+
+				`{"type":"message","user":"U1","text":"a reply","ts":"1234567890.000002","channel":"C1"}`+
+				`],"has_more":false,"response_metadata":{"next_cursor":""}}`)
+		},
+		"users.info": func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, `{"ok":true,"user":{"id":"U1","profile":{"display_name":"Alice"}}}`)
+		},
+	}))
+	t.Cleanup(srv.Close)
+	stubSlackClientFactory(t, srv)
+
+	testCmd := &cobra.Command{}
+	var out bytes.Buffer
+	testCmd.SetOut(&out)
+
+	err := runThread(testCmd, []string{"https://myws.slack.com/archives/C1/p1234567890000001"})
+	if err != nil {
+		t.Fatalf("runThread() error = %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "Alice") {
+		t.Errorf("output = %q, want it to contain the resolved author Alice", got)
+	}
+	if !strings.Contains(got, "parent message") || !strings.Contains(got, "a reply") {
+		t.Errorf("output = %q, want both the parent and the reply", got)
+	}
+}
+
+func TestRunThreadUnregisteredWorkspace(t *testing.T) {
+	seedProfile(t, "myws.slack.com")
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	testCmd := &cobra.Command{}
+	var out bytes.Buffer
+	testCmd.SetOut(&out)
+
+	err := runThread(testCmd, []string{"https://unknown.slack.com/archives/C1/p1234567890000001"})
+	if err == nil {
+		t.Fatal("runThread() error = nil, want error for an unregistered workspace")
+	}
+	if !strings.Contains(err.Error(), "unknown.slack.com") || !strings.Contains(err.Error(), "myws") || !strings.Contains(err.Error(), "auth login") {
+		t.Errorf("error = %v, want it to mention the host, registered profiles, and auth login", err)
+	}
+}
+
+func TestRunThreadDownloadNotYetImplemented(t *testing.T) {
+	seedProfile(t, "myws.slack.com")
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
+		"conversations.replies": func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, `{"ok":true,"messages":[{"type":"message","user":"U1","text":"hi","ts":"1234567890.000001","channel":"C1"}],"has_more":false}`)
+		},
+	}))
+	t.Cleanup(srv.Close)
+	stubSlackClientFactory(t, srv)
+
+	threadDownloadFlag = true
+	t.Cleanup(func() { threadDownloadFlag = false })
+
+	testCmd := &cobra.Command{}
+	testCmd.SetOut(&bytes.Buffer{})
+	if err := runThread(testCmd, []string{"https://myws.slack.com/archives/C1/p1234567890000001"}); err == nil {
+		t.Fatal("runThread() error = nil, want error since --download isn't implemented yet")
+	}
+}

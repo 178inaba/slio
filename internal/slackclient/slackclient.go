@@ -87,6 +87,52 @@ func hostFromURL(rawURL string) (string, error) {
 	return u.Host, nil
 }
 
+// ConversationReplies fetches every message in a thread (the parent plus
+// all replies), following cursor pagination until Slack reports no more.
+func (c *Client) ConversationReplies(ctx context.Context, channel, ts string) ([]slack.Message, error) {
+	var all []slack.Message
+	cursor := ""
+	for {
+		params := &slack.GetConversationRepliesParameters{
+			ChannelID: channel,
+			Timestamp: ts,
+			Cursor:    cursor,
+		}
+
+		var msgs []slack.Message
+		var hasMore bool
+		var nextCursor string
+		err := withRetry(ctx, func() error {
+			var err error
+			msgs, hasMore, nextCursor, err = c.api.GetConversationRepliesContext(ctx, params)
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		all = append(all, msgs...)
+		if !hasMore || nextCursor == "" {
+			return all, nil
+		}
+		cursor = nextCursor
+	}
+}
+
+// GetUserInfo fetches a user's profile, for resolving display names.
+func (c *Client) GetUserInfo(ctx context.Context, userID string) (*slack.User, error) {
+	var user *slack.User
+	err := withRetry(ctx, func() error {
+		var err error
+		user, err = c.api.GetUserInfoContext(ctx, userID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
 // withRetry runs fn, retrying while it fails with a rate-limit error and
 // honoring the Retry-After duration, as long as ctx's deadline (if any)
 // allows another attempt. A deadline that would pass before the wait
