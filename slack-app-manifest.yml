@@ -1,0 +1,22 @@
+display_information:
+  name: slio
+  description: Read-only Slack access for AI coding agents
+  background_color: "#4A154B"
+oauth_config:
+  scopes:
+    user:
+      - channels:history
+      - groups:history
+      - im:history
+      - mpim:history
+      - channels:read
+      - groups:read
+      - im:read
+      - mpim:read
+      - search:read
+      - users:read
+      - files:read
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
