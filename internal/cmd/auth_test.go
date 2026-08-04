@@ -1,16 +1,15 @@
 package cmd
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/178inaba/slio/internal/config"
 	"github.com/178inaba/slio/internal/slackclient"
-	"github.com/spf13/cobra"
 )
 
 func newAuthTestServer(t *testing.T, host, teamID string) *httptest.Server {
@@ -31,15 +30,20 @@ func stubSlackClientFactory(t *testing.T, srv *httptest.Server) {
 	t.Cleanup(func() { slackClientFactory = orig })
 }
 
+// runAuthLoginForTest drives runAuthLogin with scripted stdin and returns
+// what it wrote to stderr. stdout is asserted empty for every caller: the
+// command is interactive only, so nothing it prints belongs on the stream
+// that carries machine-readable output.
 func runAuthLoginForTest(t *testing.T, stdin string) (string, error) {
 	t.Helper()
-	testCmd := &cobra.Command{}
+	testCmd, out, errOut := newTestCmd(t)
 	testCmd.SetIn(strings.NewReader(stdin))
-	var out bytes.Buffer
-	testCmd.SetOut(&out)
 
 	err := runAuthLogin(testCmd, nil)
-	return out.String(), err
+	if out.Len() > 0 {
+		t.Errorf("stdout = %q, want empty", out.String())
+	}
+	return errOut.String(), err
 }
 
 func TestAuthLoginRegistersNewProfile(t *testing.T) {
@@ -47,9 +51,20 @@ func TestAuthLoginRegistersNewProfile(t *testing.T) {
 	srv := newAuthTestServer(t, "myws.slack.com", "T1")
 	stubSlackClientFactory(t, srv)
 
-	out, err := runAuthLoginForTest(t, "xoxp-abc\n\n")
+	stderr, err := runAuthLoginForTest(t, "xoxp-abc\n\n")
 	if err != nil {
-		t.Fatalf("runAuthLogin() error = %v, output = %s", err, out)
+		t.Fatalf("runAuthLogin() error = %v, stderr = %s", err, stderr)
+	}
+
+	for _, want := range []string{
+		"Paste your Slack user OAuth token",
+		"Register as profile",
+		`Registered profile "myws"`,
+		"Set as the default profile.",
+	} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want it to contain %q", stderr, want)
+		}
 	}
 
 	f, err := config.Load()
@@ -113,6 +128,47 @@ func TestAuthLoginRejectsNonUserToken(t *testing.T) {
 	}
 }
 
+func TestAuthLoginRejectsNonTTYStdin(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	// A pipe is an *os.File that is not a terminal — what stdin looks like
+	// under `echo ... | slio auth login`. The masked prompt cannot run there,
+	// so the command must refuse before reading anything.
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error = %v", err)
+	}
+	t.Cleanup(func() { r.Close() })
+	if _, err := w.WriteString("xoxp-piped\n"); err != nil {
+		t.Fatalf("writing the token to the pipe: %v", err)
+	}
+	w.Close()
+
+	slackClientFactory = func(token string) *slackclient.Client {
+		t.Fatal("slackClientFactory should not be called without a terminal")
+		return nil
+	}
+	t.Cleanup(func() { slackClientFactory = defaultSlackClientFactory })
+
+	testCmd, _, _ := newTestCmd(t)
+	testCmd.SetIn(r)
+
+	err = runAuthLogin(testCmd, nil)
+	if err == nil {
+		t.Fatal("runAuthLogin() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "SLIO_TOKEN") {
+		t.Errorf("error = %v, want it to point at SLIO_TOKEN", err)
+	}
+
+	f, loadErr := config.Load()
+	if loadErr != nil {
+		t.Fatalf("config.Load() error = %v", loadErr)
+	}
+	if len(f.Profiles) != 0 {
+		t.Errorf("profiles = %+v, want none saved", f.Profiles)
+	}
+}
+
 func TestAuthLoginAuthTestFailureDoesNotSave(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -150,9 +206,12 @@ func TestAuthLoginReRegisterSameWorkspaceConfirmed(t *testing.T) {
 		t.Fatalf("seed config Save() error = %v", err)
 	}
 
-	out, err := runAuthLoginForTest(t, "xoxp-new\ny\n")
+	stderr, err := runAuthLoginForTest(t, "xoxp-new\ny\n")
 	if err != nil {
-		t.Fatalf("runAuthLogin() error = %v, output = %s", err, out)
+		t.Fatalf("runAuthLogin() error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stderr, "Overwrite the stored token?") {
+		t.Errorf("stderr = %q, want the overwrite confirmation prompt", stderr)
 	}
 
 	f, err := config.Load()
@@ -183,12 +242,12 @@ func TestAuthLoginReRegisterSameWorkspaceDeclined(t *testing.T) {
 		t.Fatalf("seed config Save() error = %v", err)
 	}
 
-	out, err := runAuthLoginForTest(t, "xoxp-new\nn\n")
+	stderr, err := runAuthLoginForTest(t, "xoxp-new\nn\n")
 	if err != nil {
-		t.Fatalf("runAuthLogin() error = %v, output = %s", err, out)
+		t.Fatalf("runAuthLogin() error = %v, stderr = %s", err, stderr)
 	}
-	if !strings.Contains(out, "Aborted") {
-		t.Errorf("output = %q, want mention of Aborted", out)
+	if !strings.Contains(stderr, "Aborted") {
+		t.Errorf("stderr = %q, want mention of Aborted", stderr)
 	}
 
 	f, err := config.Load()

@@ -27,7 +27,7 @@ go install github.com/178inaba/slio@latest
    slio auth login
    ```
 
-   Paste the token when prompted. `slio` verifies it and records the workspace as a profile (the first one registered becomes the default).
+   Paste the token when prompted — it stays hidden as you type, so nothing appears on screen. `slio` verifies it and records the workspace as a profile (the first one registered becomes the default).
 
 The manifest is only a scope template: it contains no secrets and no workspace-specific values, so it's safe to share and reuse across workspaces.
 
@@ -63,6 +63,12 @@ Commands that take a URL (`slio thread`, and `slio history` when given a URL) pi
 - `SLIO_TOKEN` overrides the stored token for a single invocation, bypassing profile resolution.
 - `SLIO_PROFILE` selects a profile without passing `--profile` every time.
 - `SLACK_TOKEN` is intentionally **not** read — it's a shared namespace other tools populate with bot tokens, which would cause confusing partial failures (e.g. only `search` failing, since `search.messages` requires a user token).
+
+### Output streams
+
+Commands write machine-readable output — Markdown, JSON, and the profile and channel listings — to stdout. Prompts, confirmations, and status messages go to stderr, so `slio ... | jq` and `slio ... > thread.md` stay clean.
+
+`slio auth login` is interactive: it masks the token as you paste it and needs a terminal, so it refuses a piped stdin. Use `SLIO_TOKEN` in non-interactive environments.
 
 ## Agent Skill
 

@@ -9,23 +9,29 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newTestCmd(t *testing.T) (*cobra.Command, *bytes.Buffer) {
+// newTestCmd returns a command wired to separate stdout and stderr buffers,
+// so tests can assert which stream a message went to.
+func newTestCmd(t *testing.T) (cmd *cobra.Command, stdout, stderr *bytes.Buffer) {
 	t.Helper()
 	testCmd := &cobra.Command{}
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 	testCmd.SetOut(&out)
-	return testCmd, &out
+	testCmd.SetErr(&errOut)
+	return testCmd, &out, &errOut
 }
 
 func TestProfileListNoProfiles(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	testCmd, out := newTestCmd(t)
+	testCmd, out, errOut := newTestCmd(t)
 	if err := runProfileList(testCmd, nil); err != nil {
 		t.Fatalf("runProfileList() error = %v", err)
 	}
-	if !strings.Contains(out.String(), "No profiles registered") {
-		t.Errorf("output = %q, want mention of no profiles registered", out.String())
+	if !strings.Contains(errOut.String(), "No profiles registered") {
+		t.Errorf("stderr = %q, want mention of no profiles registered", errOut.String())
+	}
+	if out.Len() > 0 {
+		t.Errorf("stdout = %q, want empty when no profile is registered", out.String())
 	}
 }
 
@@ -42,7 +48,7 @@ func TestProfileListShowsProfiles(t *testing.T) {
 		t.Fatalf("seed config Save() error = %v", err)
 	}
 
-	testCmd, out := newTestCmd(t)
+	testCmd, out, _ := newTestCmd(t)
 	if err := runProfileList(testCmd, nil); err != nil {
 		t.Fatalf("runProfileList() error = %v", err)
 	}
@@ -72,12 +78,15 @@ func TestProfileUseSwitchesDefault(t *testing.T) {
 		t.Fatalf("seed config Save() error = %v", err)
 	}
 
-	testCmd, out := newTestCmd(t)
+	testCmd, out, errOut := newTestCmd(t)
 	if err := runProfileUse(testCmd, []string{"otherws"}); err != nil {
 		t.Fatalf("runProfileUse() error = %v", err)
 	}
-	if !strings.Contains(out.String(), "otherws") {
-		t.Errorf("output = %q, want mention of otherws", out.String())
+	if !strings.Contains(errOut.String(), "otherws") {
+		t.Errorf("stderr = %q, want mention of otherws", errOut.String())
+	}
+	if out.Len() > 0 {
+		t.Errorf("stdout = %q, want empty", out.String())
 	}
 
 	got, err := config.Load()
@@ -101,7 +110,7 @@ func TestProfileUseUnknownName(t *testing.T) {
 		t.Fatalf("seed config Save() error = %v", err)
 	}
 
-	testCmd, _ := newTestCmd(t)
+	testCmd, _, _ := newTestCmd(t)
 	err := runProfileUse(testCmd, []string{"nope"})
 	if err == nil {
 		t.Fatal("runProfileUse() error = nil, want error")
