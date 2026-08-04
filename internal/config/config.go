@@ -90,7 +90,10 @@ func (f *File) Save() error {
 		return fmt.Errorf("encode config: %w", err)
 	}
 
-	path := filepath.Join(dir, "config.json")
+	path, err := Path()
+	if err != nil {
+		return err
+	}
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("write config file: %w", err)
 	}

@@ -1,9 +1,16 @@
 package cmd
 
 import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/178inaba/slio/internal/cache"
+	"github.com/178inaba/slio/internal/slackclient"
 	"github.com/slack-go/slack"
 )
 
@@ -138,5 +145,55 @@ func TestBuildThreadPermalink(t *testing.T) {
 	want := "https://myws.slack.com/archives/C1/p1234567890123456?thread_ts=1234567890.123456&cid=C1"
 	if got != want {
 		t.Errorf("buildThreadPermalink() = %q, want %q", got, want)
+	}
+}
+
+func TestUserResolverPropagatesDeadlineExceeded(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"ok":true,"user":{"id":"U1","profile":{"display_name":"Alice"}}}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	client := slackclient.New("xoxp-test", slackclient.WithAPIURL(srv.URL+"/"))
+	store, err := cache.Open("testkey")
+	if err != nil {
+		t.Fatalf("cache.Open() error = %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 0)
+	defer cancel()
+	<-ctx.Done() // guarantee the deadline has already passed before resolving
+
+	r := newUserResolver(ctx, client, store, time.Now())
+	if got := r.resolve("U1"); got != "" {
+		t.Errorf("resolve() = %q, want empty (falls back to the raw ID) while an error is recorded", got)
+	}
+	if r.err() == nil {
+		t.Error("err() = nil, want a deadline-exceeded error to have been recorded")
+	}
+}
+
+func TestUserResolverDoesNotRecordOrdinaryLookupFailure(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"ok":false,"error":"user_not_found"}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	client := slackclient.New("xoxp-test", slackclient.WithAPIURL(srv.URL+"/"))
+	store, err := cache.Open("testkey2")
+	if err != nil {
+		t.Fatalf("cache.Open() error = %v", err)
+	}
+
+	r := newUserResolver(context.Background(), client, store, time.Now())
+	if got := r.resolve("U1"); got != "" {
+		t.Errorf("resolve() = %q, want empty", got)
+	}
+	if err := r.err(); err != nil {
+		t.Errorf("err() = %v, want nil for an ordinary (non-deadline) lookup failure", err)
 	}
 }

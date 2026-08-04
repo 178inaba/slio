@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -23,15 +24,25 @@ type userResolver struct {
 	store  *cache.Store
 	now    time.Time
 	memo   map[string]string
+	// fatalErr holds the first deadline/cancellation error seen by
+	// resolve, if any. Callers must check err() after rendering and
+	// before writing output: a users.info failure that's merely
+	// "not found" falls back to the raw ID as before, but a deadline
+	// exceeded mid-resolution must not be swallowed into a degraded
+	// success — that would violate "no partial-success output" on
+	// deadline.
+	fatalErr error
 }
 
 func newUserResolver(ctx context.Context, client *slackclient.Client, store *cache.Store, now time.Time) *userResolver {
 	return &userResolver{ctx: ctx, client: client, store: store, now: now, memo: map[string]string{}}
 }
 
-// resolve implements format.Resolver. A miss (network error included) is
-// reported as "" so the caller falls back to raw IDs rather than failing
-// the whole render.
+// resolve implements format.Resolver. A miss is reported as "" so the
+// caller falls back to raw IDs rather than failing the whole render — with
+// one exception: a deadline/cancellation error is recorded (see err())
+// rather than silently swallowed, since it means the invocation ran out of
+// time, not that the user simply isn't resolvable.
 func (r *userResolver) resolve(userID string) string {
 	if userID == "" {
 		return ""
@@ -47,6 +58,9 @@ func (r *userResolver) resolve(userID string) string {
 
 	user, err := r.client.GetUserInfo(r.ctx, userID)
 	if err != nil {
+		if r.fatalErr == nil && (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) {
+			r.fatalErr = fmt.Errorf("resolve user %s: %w", userID, err)
+		}
 		return ""
 	}
 	name := user.Profile.DisplayName
@@ -60,6 +74,13 @@ func (r *userResolver) resolve(userID string) string {
 	_ = r.store.PutUser(userID, name, r.now) // best-effort; a cache write failure shouldn't fail the render
 	r.memo[userID] = name
 	return name
+}
+
+// err returns the first deadline/cancellation error resolve encountered,
+// or nil. Command RunE functions must check this after building messages
+// and before writing output.
+func (r *userResolver) err() error {
+	return r.fatalErr
 }
 
 // systemSubtypes are message subtypes rendered as a single system-message

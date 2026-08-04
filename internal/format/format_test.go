@@ -213,6 +213,48 @@ func TestRenderJSONIncludesRawTsAndRendersText(t *testing.T) {
 	}
 }
 
+func TestRenderJSONRendersQuotedBlocks(t *testing.T) {
+	messages := []Message{
+		{
+			Ts:           "1234567890.123456",
+			Time:         time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC),
+			Text:         "hi",
+			QuotedBlocks: []string{"see <@U2> re: *this*"},
+		},
+	}
+	data, err := RenderJSON(messages, resolverFromMap(map[string]string{"U2": "Bob"}))
+	if err != nil {
+		t.Fatalf("RenderJSON() error = %v", err)
+	}
+
+	var decoded []struct {
+		QuotedBlocks []string `json:"quoted_blocks"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal RenderJSON() output: %v", err)
+	}
+	if len(decoded) != 1 || len(decoded[0].QuotedBlocks) != 1 {
+		t.Fatalf("decoded = %+v, want one message with one quoted block", decoded)
+	}
+	if want := "see @Bob re: **this**"; decoded[0].QuotedBlocks[0] != want {
+		t.Errorf("QuotedBlocks[0] = %q, want %q (rendered like message text)", decoded[0].QuotedBlocks[0], want)
+	}
+}
+
+func TestRenderMarkdownRendersQuotedBlocks(t *testing.T) {
+	m := Message{
+		Ts:           "1234567890.123456",
+		Time:         time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC),
+		Author:       "Alice",
+		Text:         "hi",
+		QuotedBlocks: []string{"see <@U2> re: *this*"},
+	}
+	got := RenderMarkdown(m, resolverFromMap(map[string]string{"U2": "Bob"}))
+	if want := "> see @Bob re: **this**"; !strings.Contains(got, want) {
+		t.Errorf("RenderMarkdown() = %q, want it to contain %q (mrkdwn rendered in the quoted block)", got, want)
+	}
+}
+
 func TestParseTsAndFormatTsRoundTrip(t *testing.T) {
 	const ts = "1234567890.123456"
 	tm, err := ParseTs(ts)

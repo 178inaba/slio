@@ -56,6 +56,9 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		}
 		messages = append(messages, fm)
 	}
+	if err := resolver.err(); err != nil {
+		return err
+	}
 
 	var notice string
 	if more := total - len(messages); more > 0 {

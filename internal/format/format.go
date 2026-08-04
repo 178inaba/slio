@@ -172,8 +172,9 @@ func RenderMarkdown(m Message, resolveUser Resolver) string {
 	b.WriteString("\n")
 
 	for _, block := range m.QuotedBlocks {
+		rendered := RenderText(block, resolveUser)
 		b.WriteString("\n> ")
-		b.WriteString(strings.ReplaceAll(strings.TrimRight(block, "\n"), "\n", "\n> "))
+		b.WriteString(strings.ReplaceAll(strings.TrimRight(rendered, "\n"), "\n", "\n> "))
 		b.WriteString("\n")
 	}
 
@@ -226,14 +227,23 @@ type jsonMessage struct {
 	ReplyCount      int        `json:"reply_count,omitempty"`
 	ThreadPermalink string     `json:"thread_permalink,omitempty"`
 	Permalink       string     `json:"permalink,omitempty"`
+	QuotedBlocks    []string   `json:"quoted_blocks,omitempty"`
 }
 
 // RenderJSON renders messages, in the order given, as a JSON array. Text
-// is rendered the same way as in Markdown output (mentions expanded,
-// mrkdwn converted) so consumers don't need to understand Slack's markup.
+// (and QuotedBlocks) is rendered the same way as in Markdown output
+// (mentions expanded, mrkdwn converted) so consumers don't need to
+// understand Slack's markup.
 func RenderJSON(messages []Message, resolveUser Resolver) ([]byte, error) {
 	out := make([]jsonMessage, len(messages))
 	for i, m := range messages {
+		var quotedBlocks []string
+		if len(m.QuotedBlocks) > 0 {
+			quotedBlocks = make([]string, len(m.QuotedBlocks))
+			for j, block := range m.QuotedBlocks {
+				quotedBlocks[j] = RenderText(block, resolveUser)
+			}
+		}
 		out[i] = jsonMessage{
 			Ts:              m.Ts,
 			Time:            m.Time,
@@ -246,6 +256,7 @@ func RenderJSON(messages []Message, resolveUser Resolver) ([]byte, error) {
 			ReplyCount:      m.ReplyCount,
 			ThreadPermalink: m.ThreadPermalink,
 			Permalink:       m.Permalink,
+			QuotedBlocks:    quotedBlocks,
 		}
 	}
 	return json.MarshalIndent(out, "", "  ")

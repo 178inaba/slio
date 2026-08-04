@@ -56,7 +56,7 @@ Add `--format json` to any read command for structured output instead of Markdow
 
 ### Multiple workspaces
 
-Commands that take a URL (`slio thread`) pick the right profile automatically from the URL's host. Commands without one (`slio search`, `slio channel list`) use the default profile; pass `--profile <name>` to use another one, or `slio profile use <name>` to change the default.
+Commands that take a URL (`slio thread`, and `slio history` when given a URL) pick the right profile automatically from the URL's host. Commands without one (`slio history` given a channel ID or `#name`, `slio search`, `slio channel list`) use the default profile; pass `--profile <name>` to use another one, or `slio profile use <name>` to change the default.
 
 ### Environment variables
 
