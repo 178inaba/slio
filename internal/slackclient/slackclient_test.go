@@ -117,6 +117,84 @@ func TestGetUserInfoSuccess(t *testing.T) {
 	}
 }
 
+func TestConversationHistoryNoTruncation(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"ok":true,"messages":[{"type":"message","text":"a","ts":"1.000001"},{"type":"message","text":"b","ts":"1.000002"}],"has_more":false}`)
+	})
+
+	msgs, hasMore, err := c.ConversationHistory(context.Background(), "C1", "", "", 5)
+	if err != nil {
+		t.Fatalf("ConversationHistory() error = %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("len(msgs) = %d, want 2", len(msgs))
+	}
+	if hasMore {
+		t.Error("hasMore = true, want false")
+	}
+}
+
+func TestConversationHistoryTruncatesAndReportsHasMore(t *testing.T) {
+	var calls int32
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&calls, 1)
+		if n == 1 {
+			fmt.Fprint(w, `{"ok":true,"messages":[{"type":"message","text":"a","ts":"1.000001"},{"type":"message","text":"b","ts":"1.000002"}],`+
+				`"has_more":true,"response_metadata":{"next_cursor":"cursor1"}}`)
+			return
+		}
+		fmt.Fprint(w, `{"ok":true,"messages":[{"type":"message","text":"c","ts":"1.000003"}],"has_more":false}`)
+	})
+
+	msgs, hasMore, err := c.ConversationHistory(context.Background(), "C1", "", "", 2)
+	if err != nil {
+		t.Fatalf("ConversationHistory() error = %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("len(msgs) = %d, want 2 (truncated to limit)", len(msgs))
+	}
+	if !hasMore {
+		t.Error("hasMore = false, want true")
+	}
+}
+
+func TestConversationsForUserFollowsPagination(t *testing.T) {
+	var calls int32
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&calls, 1)
+		if n == 1 {
+			fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C1","name":"general"}],"response_metadata":{"next_cursor":"cursor1"}}`)
+			return
+		}
+		fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C2","name":"random"}],"response_metadata":{"next_cursor":""}}`)
+	})
+
+	channels, err := c.ConversationsForUser(context.Background())
+	if err != nil {
+		t.Fatalf("ConversationsForUser() error = %v", err)
+	}
+	if len(channels) != 2 || channels[0].Name != "general" || channels[1].Name != "random" {
+		t.Errorf("channels = %+v, want [general random]", channels)
+	}
+}
+
+func TestSearchMessagesReturnsMatchesAndTotal(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"ok":true,"messages":{"matches":[{"text":"hello","ts":"1.000001","permalink":"https://myws.slack.com/archives/C1/p1000001"}],"total":1}}`)
+	})
+
+	matches, total, err := c.SearchMessages(context.Background(), "hello", 20)
+	if err != nil {
+		t.Fatalf("SearchMessages() error = %v", err)
+	}
+	if total != 1 {
+		t.Errorf("total = %d, want 1", total)
+	}
+	if len(matches) != 1 || matches[0].Text != "hello" {
+		t.Errorf("matches = %+v, want one match with text hello", matches)
+	}
+}
+
 func TestAuthTestDeadlineExceededWhileRateLimited(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", "5")

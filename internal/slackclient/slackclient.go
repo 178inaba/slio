@@ -119,6 +119,118 @@ func (c *Client) ConversationReplies(ctx context.Context, channel, ts string) ([
 	}
 }
 
+// ConversationHistory fetches up to limit of the most recent messages in a
+// channel (optionally bounded by oldest/latest, both Slack ts strings, or
+// "" for no bound), following cursor pagination as needed. hasMore reports
+// whether more messages exist beyond what was returned, so callers can
+// show an "older messages omitted" notice; it's determined by asking for
+// one extra message and dropping it if present, rather than trusting
+// Slack's has_more on the exact boundary page.
+func (c *Client) ConversationHistory(ctx context.Context, channel, oldest, latest string, limit int) (messages []slack.Message, hasMore bool, err error) {
+	target := limit + 1
+	var all []slack.Message
+	cursor := ""
+	for len(all) < target {
+		params := &slack.GetConversationHistoryParameters{
+			ChannelID: channel,
+			Oldest:    oldest,
+			Latest:    latest,
+			Cursor:    cursor,
+			Limit:     target - len(all),
+		}
+
+		var resp *slack.GetConversationHistoryResponse
+		err := withRetry(ctx, func() error {
+			var err error
+			resp, err = c.api.GetConversationHistoryContext(ctx, params)
+			return err
+		})
+		if err != nil {
+			return nil, false, err
+		}
+
+		all = append(all, resp.Messages...)
+		if !resp.HasMore || resp.ResponseMetaData.NextCursor == "" {
+			break
+		}
+		cursor = resp.ResponseMetaData.NextCursor
+	}
+
+	if len(all) > limit {
+		return all[:limit], true, nil
+	}
+	return all, false, nil
+}
+
+// ConversationsForUser lists the public and private channels the token's
+// user is a member of, excluding archived ones, following cursor
+// pagination. conversations.list can't filter by membership, hence
+// users.conversations here instead.
+func (c *Client) ConversationsForUser(ctx context.Context) ([]slack.Channel, error) {
+	var all []slack.Channel
+	cursor := ""
+	for {
+		params := &slack.GetConversationsForUserParameters{
+			Types:           []string{"public_channel", "private_channel"},
+			ExcludeArchived: true,
+			Cursor:          cursor,
+		}
+
+		var channels []slack.Channel
+		var nextCursor string
+		err := withRetry(ctx, func() error {
+			var err error
+			channels, nextCursor, err = c.api.GetConversationsForUserContext(ctx, params)
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		all = append(all, channels...)
+		if nextCursor == "" {
+			return all, nil
+		}
+		cursor = nextCursor
+	}
+}
+
+// SearchMessages searches messages, following Slack's page-number-based
+// pagination (search.messages has no cursor) until limit results are
+// collected or no more pages remain. total is the API's reported total
+// hit count, for the "N more results" notice.
+func (c *Client) SearchMessages(ctx context.Context, query string, limit int) (matches []slack.SearchMessage, total int, err error) {
+	var all []slack.SearchMessage
+	page := 1
+	for len(all) < limit {
+		params := slack.NewSearchParameters()
+		params.Count = min(limit-len(all), 100)
+		params.Page = page
+
+		var resp *slack.SearchMessages
+		err := withRetry(ctx, func() error {
+			var err error
+			resp, err = c.api.SearchMessagesContext(ctx, query, params)
+			return err
+		})
+		if err != nil {
+			return nil, 0, err
+		}
+
+		all = append(all, resp.Matches...)
+		total = resp.Total
+		if page >= resp.Pagination.PageCount || len(resp.Matches) == 0 {
+			break
+		}
+		page++
+	}
+
+	if len(all) > limit {
+		all = all[:limit]
+	}
+	return all, total, nil
+}
+
 // GetUserInfo fetches a user's profile, for resolving display names.
 func (c *Client) GetUserInfo(ctx context.Context, userID string) (*slack.User, error) {
 	var user *slack.User

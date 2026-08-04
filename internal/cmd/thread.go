@@ -63,5 +63,5 @@ func runThread(cmd *cobra.Command, args []string) error {
 		messages = append(messages, fm)
 	}
 
-	return writeMessages(cmd, messages, resolver.resolve)
+	return writeMessages(cmd, messages, resolver.resolve, "", "")
 }

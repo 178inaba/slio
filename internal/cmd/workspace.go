@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/178inaba/slio/internal/config"
 	"github.com/178inaba/slio/internal/format"
@@ -36,18 +38,48 @@ func resolveWorkspace(ctx context.Context, urlHost string) (creds config.Credent
 	return creds, result.Host, "team-" + result.TeamID, nil
 }
 
+// jsonMessagesEnvelope is the --format json shape for a list-of-messages
+// command (history, search, thread): the rendered messages, plus a
+// truncation notice when one applies.
+type jsonMessagesEnvelope struct {
+	Messages json.RawMessage `json:"messages"`
+	Notice   string          `json:"notice,omitempty"`
+}
+
 // writeMessages renders messages per the --format flag and writes them to
-// the command's output.
-func writeMessages(cmd *cobra.Command, messages []format.Message, resolve format.Resolver) error {
+// the command's output. leadingNotice/trailingNotice (either may be "")
+// carry a truncation notice — "history" needs it to precede the message
+// list ("older messages omitted"), "search" needs it to follow ("N more
+// results"). In JSON mode there's no leading/trailing distinction (object
+// field order doesn't matter to a consumer), so both collapse into a
+// single "notice" field so the output stays valid, parseable JSON.
+func writeMessages(cmd *cobra.Command, messages []format.Message, resolve format.Resolver, leadingNotice, trailingNotice string) error {
 	out := cmd.OutOrStdout()
+
 	if formatFlag == "json" {
 		data, err := format.RenderJSON(messages, resolve)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(out, string(data))
+		envelope := jsonMessagesEnvelope{
+			Messages: data,
+			Notice:   strings.TrimSpace(leadingNotice + trailingNotice),
+		}
+		encoded, err := json.MarshalIndent(envelope, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(out, string(encoded))
 		return nil
 	}
+
+	if leadingNotice != "" {
+		fmt.Fprintln(out, leadingNotice)
+		fmt.Fprintln(out)
+	}
 	fmt.Fprintln(out, format.RenderMarkdownList(messages, resolve))
+	if trailingNotice != "" {
+		fmt.Fprintln(out, trailingNotice)
+	}
 	return nil
 }
