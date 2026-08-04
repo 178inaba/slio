@@ -52,6 +52,12 @@ func TestThreadURLNotAbsolute(t *testing.T) {
 	}
 }
 
+func TestThreadURLTooFewDigitsReturnsErrorNotPanic(t *testing.T) {
+	if _, err := ThreadURL("https://myws.slack.com/archives/C0123456789/p123"); err == nil {
+		t.Fatal("ThreadURL() error = nil, want error for a too-short p<digits> segment")
+	}
+}
+
 func TestParseChannelArgURL(t *testing.T) {
 	got, err := ParseChannelArg("https://myws.slack.com/archives/C0123456789")
 	if err != nil {

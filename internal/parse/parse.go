@@ -12,7 +12,11 @@ import (
 )
 
 var (
-	permalinkPathRe = regexp.MustCompile(`^/archives/([A-Za-z0-9]+)/p(\d+)$`)
+	// The digits after "p" require at least 7: a real Slack ts is 10 digits
+	// of epoch seconds plus 6 of fractional microseconds, and the dot
+	// always sits 6 digits from the end (see tsFromPermalinkDigits) — with
+	// fewer than 7 digits that split would go negative.
+	permalinkPathRe = regexp.MustCompile(`^/archives/([A-Za-z0-9]+)/p(\d{7,})$`)
 	channelPathRe   = regexp.MustCompile(`^/archives/([A-Za-z0-9]+)`)
 )
 

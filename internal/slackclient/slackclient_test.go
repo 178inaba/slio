@@ -161,6 +161,21 @@ func TestConversationHistoryTruncatesAndReportsHasMore(t *testing.T) {
 	}
 }
 
+func TestConversationHistoryClampsPerPageLimitTo999(t *testing.T) {
+	var gotLimit string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotLimit = r.FormValue("limit")
+		_, _ = fmt.Fprint(w, `{"ok":true,"messages":[{"type":"message","text":"a","ts":"1.000001"}],"has_more":false}`)
+	})
+
+	if _, _, err := c.ConversationHistory(context.Background(), "C1", "", "", 2000); err != nil {
+		t.Fatalf("ConversationHistory() error = %v", err)
+	}
+	if gotLimit != "999" {
+		t.Errorf("limit param = %q, want clamped to conversations.history's documented max of 999", gotLimit)
+	}
+}
+
 func TestConversationsForUserFollowsPagination(t *testing.T) {
 	var calls int32
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -195,6 +210,38 @@ func TestSearchMessagesReturnsMatchesAndTotal(t *testing.T) {
 	}
 	if len(matches) != 1 || matches[0].Text != "hello" {
 		t.Errorf("matches = %+v, want one match with text hello", matches)
+	}
+}
+
+func TestSearchMessagesKeepsPageSizeFixedAcrossPages(t *testing.T) {
+	// A regression test for shrinking count as limit is approached: Slack's
+	// "page" is defined relative to count, so a page 2 requested with a
+	// different count than page 1 used is not "the next 100-sized page" —
+	// it silently duplicates or skips results. count must stay fixed.
+	var gotCounts []string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotCounts = append(gotCounts, r.FormValue("count"))
+		if r.FormValue("page") == "1" {
+			_, _ = fmt.Fprint(w, `{"ok":true,"messages":{"matches":[{"text":"a","ts":"1.000001"}],"total":150,"pagination":{"page_count":2}}}`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"ok":true,"messages":{"matches":[{"text":"b","ts":"1.000002"}],"total":150,"pagination":{"page_count":2}}}`)
+	})
+
+	_, total, err := c.SearchMessages(context.Background(), "hello", 150)
+	if err != nil {
+		t.Fatalf("SearchMessages() error = %v", err)
+	}
+	if total != 150 {
+		t.Errorf("total = %d, want 150", total)
+	}
+	if len(gotCounts) != 2 {
+		t.Fatalf("requests made = %d, want 2 (one per page)", len(gotCounts))
+	}
+	for i, cnt := range gotCounts {
+		if cnt != "100" {
+			t.Errorf("count param on request %d = %q, want fixed 100 across all pages", i+1, cnt)
+		}
 	}
 }
 

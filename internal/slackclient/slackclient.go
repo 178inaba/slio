@@ -134,6 +134,12 @@ func (c *Client) ConversationReplies(ctx context.Context, channel, ts string) ([
 // one extra message and dropping it if present, rather than trusting
 // Slack's has_more on the exact boundary page.
 func (c *Client) ConversationHistory(ctx context.Context, channel, oldest, latest string, limit int) (messages []slack.Message, hasMore bool, err error) {
+	// conversations.history documents 999 as the max per-request limit;
+	// behavior above that is undocumented, so each page is capped there
+	// regardless of how large the caller's overall limit is. This is safe
+	// to vary per page (unlike SearchMessages' count) because cursor
+	// pagination, not a fixed page size, defines the boundaries.
+	const maxPageLimit = 999
 	target := limit + 1
 	var all []slack.Message
 	cursor := ""
@@ -143,7 +149,7 @@ func (c *Client) ConversationHistory(ctx context.Context, channel, oldest, lates
 			Oldest:    oldest,
 			Latest:    latest,
 			Cursor:    cursor,
-			Limit:     target - len(all),
+			Limit:     min(target-len(all), maxPageLimit),
 		}
 
 		var resp *slack.GetConversationHistoryResponse
@@ -207,11 +213,17 @@ func (c *Client) ConversationsForUser(ctx context.Context) ([]slack.Channel, err
 // collected or no more pages remain. total is the API's reported total
 // hit count, for the "N more results" notice.
 func (c *Client) SearchMessages(ctx context.Context, query string, limit int) (matches []slack.SearchMessage, total int, err error) {
+	// count must stay fixed across pages: Slack's "page" is defined
+	// relative to count (page 2 at count=50 is a different slice of
+	// results than page 2 at count=100), so shrinking it as limit is
+	// approached would shift page boundaries and produce duplicates or
+	// gaps. Truncating to limit at the end handles the excess instead.
+	const pageSize = 100
 	var all []slack.SearchMessage
 	page := 1
 	for len(all) < limit {
 		params := slack.NewSearchParameters()
-		params.Count = min(limit-len(all), 100)
+		params.Count = pageSize
 		params.Page = page
 
 		var resp *slack.SearchMessages
