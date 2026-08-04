@@ -13,7 +13,7 @@ func resolverFromMap(m map[string]string) Resolver {
 
 func TestRenderTextMentionResolved(t *testing.T) {
 	got := RenderText("<@U1> hello", resolverFromMap(map[string]string{"U1": "Alice"}))
-	want := "@Alice hello"
+	want := "**@Alice** hello"
 	if got != want {
 		t.Errorf("RenderText() = %q, want %q", got, want)
 	}
@@ -21,7 +21,7 @@ func TestRenderTextMentionResolved(t *testing.T) {
 
 func TestRenderTextMentionUnresolvedWithFallback(t *testing.T) {
 	got := RenderText("<@U1|bob>", resolverFromMap(nil))
-	want := "@bob"
+	want := "**@bob**"
 	if got != want {
 		t.Errorf("RenderText() = %q, want %q", got, want)
 	}
@@ -29,7 +29,21 @@ func TestRenderTextMentionUnresolvedWithFallback(t *testing.T) {
 
 func TestRenderTextMentionUnresolvedNoFallback(t *testing.T) {
 	got := RenderText("<@U1>", resolverFromMap(nil))
-	want := "@U1"
+	want := "**@U1**"
+	if got != want {
+		t.Errorf("RenderText() = %q, want %q", got, want)
+	}
+}
+
+func TestRenderTextMentionWithSpaceInDisplayNameHasUnambiguousBoundary(t *testing.T) {
+	// A display name containing a space (real Slack workspaces commonly
+	// have these, e.g. "Firstname Lastname" or a name plus a nickname)
+	// makes a bare "@Name text" rendering ambiguous about where the
+	// mention ends and the message begins. Wrapping in ** gives it an
+	// explicit, parseable boundary — the same way Slack's own UI
+	// highlights mentions.
+	got := RenderText("<@U1> hurry, let's merge this", resolverFromMap(map[string]string{"U1": "Jordan Example"}))
+	want := "**@Jordan Example** hurry, let's merge this"
 	if got != want {
 		t.Errorf("RenderText() = %q, want %q", got, want)
 	}
@@ -59,15 +73,15 @@ func TestRenderTextSpecialMentions(t *testing.T) {
 
 func TestRenderTextSubteamWithName(t *testing.T) {
 	got := RenderText("<!subteam^S1|@eng>", resolverFromMap(nil))
-	if got != "@eng" {
-		t.Errorf("RenderText() = %q, want @eng", got)
+	if got != "**@eng**" {
+		t.Errorf("RenderText() = %q, want **@eng**", got)
 	}
 }
 
 func TestRenderTextSubteamWithoutName(t *testing.T) {
 	got := RenderText("<!subteam^S1>", resolverFromMap(nil))
-	if got != "@S1" {
-		t.Errorf("RenderText() = %q, want @S1", got)
+	if got != "**@S1**" {
+		t.Errorf("RenderText() = %q, want **@S1**", got)
 	}
 }
 
@@ -92,6 +106,18 @@ func TestRenderTextBoldAndStrike(t *testing.T) {
 	want := "**bold** and ~~strike~~"
 	if got != want {
 		t.Errorf("RenderText() = %q, want %q", got, want)
+	}
+}
+
+func TestRenderTextExistingGFMBoldAndStrikeUnchanged(t *testing.T) {
+	// content sourced from elsewhere (e.g. a GitHub unfurl attachment) can
+	// already use GFM's **bold**/~~strike~~ syntax. The naive single-*/~
+	// pattern must not match the inner pair and corrupt it into
+	// ***bold***/~~~strike~~~.
+	raw := "already **bold** and ~~struck~~ text"
+	got := RenderText(raw, resolverFromMap(nil))
+	if got != raw {
+		t.Errorf("RenderText() = %q, want unchanged %q", got, raw)
 	}
 }
 
@@ -135,7 +161,7 @@ func TestRenderMarkdownNormalMessage(t *testing.T) {
 	got := RenderMarkdown(m, resolverFromMap(map[string]string{"U2": "Bob"}))
 
 	for _, want := range []string{
-		"Alice", m.Time.Local().Format("2006-01-02 15:04"), "(edited)", "hello @Bob",
+		"Alice", m.Time.Local().Format("2006-01-02 15:04"), "(edited)", "hello **@Bob**",
 		":+1: 2", "report.pdf", "3 replies",
 		"https://myws.slack.com/archives/C1/p1234567890123456?thread_ts=1234567890.123456&cid=C1",
 	} {
@@ -205,7 +231,7 @@ func TestRenderJSONIncludesRawTsAndRendersText(t *testing.T) {
 	if decoded[0]["ts"] != "1234567890.123456" {
 		t.Errorf("ts = %v, want raw Slack ts", decoded[0]["ts"])
 	}
-	if decoded[0]["text"] != "hi @Bob" {
+	if decoded[0]["text"] != "hi **@Bob**" {
 		t.Errorf("text = %v, want rendered text with mention expanded", decoded[0]["text"])
 	}
 	if _, ok := decoded[0]["reactions"]; ok {
@@ -236,7 +262,7 @@ func TestRenderJSONRendersQuotedBlocks(t *testing.T) {
 	if len(decoded) != 1 || len(decoded[0].QuotedBlocks) != 1 {
 		t.Fatalf("decoded = %+v, want one message with one quoted block", decoded)
 	}
-	if want := "see @Bob re: **this**"; decoded[0].QuotedBlocks[0] != want {
+	if want := "see **@Bob** re: **this**"; decoded[0].QuotedBlocks[0] != want {
 		t.Errorf("QuotedBlocks[0] = %q, want %q (rendered like message text)", decoded[0].QuotedBlocks[0], want)
 	}
 }
@@ -250,7 +276,7 @@ func TestRenderMarkdownRendersQuotedBlocks(t *testing.T) {
 		QuotedBlocks: []string{"see <@U2> re: *this*"},
 	}
 	got := RenderMarkdown(m, resolverFromMap(map[string]string{"U2": "Bob"}))
-	if want := "> see @Bob re: **this**"; !strings.Contains(got, want) {
+	if want := "> see **@Bob** re: **this**"; !strings.Contains(got, want) {
 		t.Errorf("RenderMarkdown() = %q, want it to contain %q (mrkdwn rendered in the quoted block)", got, want)
 	}
 }

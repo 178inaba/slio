@@ -100,8 +100,11 @@ var (
 	subteamRe = regexp.MustCompile(`<!subteam\^([A-Z0-9]+)(?:\|([^>]*))?>`)
 	specialRe = regexp.MustCompile(`<!(here|channel|everyone)>`)
 	linkRe    = regexp.MustCompile(`<([^|<>]+)\|([^>]*)>`)
-	boldRe    = regexp.MustCompile(`\*([^*\n]+)\*`)
-	strikeRe  = regexp.MustCompile(`~([^~\n]+)~`)
+	// The boundary groups (never matching another *) keep these from
+	// matching the inner single-* pair of text that's already **bold**
+	// or ~~struck~~ (which would otherwise corrupt it into ***bold***).
+	boldRe   = regexp.MustCompile(`(^|[^*])\*([^*\n]+)\*([^*]|$)`)
+	strikeRe = regexp.MustCompile(`(^|[^~])~([^~\n]+)~([^~]|$)`)
 )
 
 // transformPlain applies Slack markup expansion to text known not to be
@@ -114,12 +117,12 @@ func transformPlain(s string, resolveUser Resolver) string {
 		sub := mentionRe.FindStringSubmatch(m)
 		id, fallback := sub[1], sub[2]
 		if name := resolveUser(id); name != "" {
-			return "@" + name
+			return "**@" + name + "**"
 		}
 		if fallback != "" {
-			return "@" + fallback
+			return "**@" + fallback + "**"
 		}
-		return "@" + id
+		return "**@" + id + "**"
 	})
 	s = channelRe.ReplaceAllStringFunc(s, func(m string) string {
 		sub := channelRe.FindStringSubmatch(m)
@@ -133,9 +136,9 @@ func transformPlain(s string, resolveUser Resolver) string {
 		sub := subteamRe.FindStringSubmatch(m)
 		id, name := sub[1], sub[2]
 		if name == "" {
-			return "@" + id
+			return "**@" + id + "**"
 		}
-		return name
+		return "**" + name + "**"
 	})
 	s = specialRe.ReplaceAllString(s, "@$1")
 	s = linkRe.ReplaceAllStringFunc(s, func(m string) string {
@@ -144,8 +147,8 @@ func transformPlain(s string, resolveUser Resolver) string {
 		return "[" + text + "](" + url + ")"
 	})
 	s = unescapeEntities(s)
-	s = boldRe.ReplaceAllString(s, "**$1**")
-	s = strikeRe.ReplaceAllString(s, "~~$1~~")
+	s = boldRe.ReplaceAllString(s, "${1}**${2}**${3}")
+	s = strikeRe.ReplaceAllString(s, "${1}~~${2}~~${3}")
 	return s
 }
 
