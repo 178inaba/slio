@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -50,4 +52,14 @@ func validateFormatFlag(cmd *cobra.Command, args []string) error {
 // Execute runs the root command.
 func Execute() error {
 	return rootCmd.Execute()
+}
+
+// commandContext returns a context bound to --timeout. A zero timeout means
+// no deadline: context.WithTimeout(ctx, 0) would expire immediately, so that
+// case skips WithTimeout entirely.
+func commandContext() (context.Context, context.CancelFunc) {
+	if timeoutSecondsFlag <= 0 {
+		return context.Background(), func() {}
+	}
+	return context.WithTimeout(context.Background(), time.Duration(timeoutSecondsFlag)*time.Second)
 }

@@ -133,7 +133,7 @@ func Resolve(f *File, flagProfile, urlHost string, getenv func(string) string) (
 		p, ok := f.Profiles[flagProfile]
 		if !ok {
 			return Credentials{}, fmt.Errorf("profile %q not found; registered profiles: %s",
-				flagProfile, registeredProfilesList(f))
+				flagProfile, ProfileNames(f))
 		}
 		if urlHost != "" && urlHost != p.Host {
 			return Credentials{}, fmt.Errorf(
@@ -155,14 +155,14 @@ func Resolve(f *File, flagProfile, urlHost string, getenv func(string) string) (
 		}
 		return Credentials{}, fmt.Errorf(
 			"no profile registered for %s; registered profiles: %s; run `slio auth login` to register it",
-			urlHost, registeredProfilesList(f))
+			urlHost, ProfileNames(f))
 	}
 
 	if name := getenv("SLIO_PROFILE"); name != "" {
 		p, ok := f.Profiles[name]
 		if !ok {
 			return Credentials{}, fmt.Errorf("SLIO_PROFILE %q not found; registered profiles: %s",
-				name, registeredProfilesList(f))
+				name, ProfileNames(f))
 		}
 		return Credentials{Token: p.Token, Host: p.Host, Profile: name}, nil
 	}
@@ -173,12 +173,15 @@ func Resolve(f *File, flagProfile, urlHost string, getenv func(string) string) (
 	p, ok := f.Profiles[f.DefaultProfile]
 	if !ok {
 		return Credentials{}, fmt.Errorf("default profile %q not found; registered profiles: %s",
-			f.DefaultProfile, registeredProfilesList(f))
+			f.DefaultProfile, ProfileNames(f))
 	}
 	return Credentials{Token: p.Token, Host: p.Host, Profile: f.DefaultProfile}, nil
 }
 
-func registeredProfilesList(f *File) string {
+// ProfileNames returns the registered profile names, sorted and
+// comma-joined, for use in error messages (e.g. "profile %q not found;
+// registered profiles: %s"). Returns "(none)" if none are registered.
+func ProfileNames(f *File) string {
 	if len(f.Profiles) == 0 {
 		return "(none)"
 	}

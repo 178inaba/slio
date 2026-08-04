@@ -1,8 +1,10 @@
 package cmd
 
 import (
-	"errors"
+	"fmt"
+	"sort"
 
+	"github.com/178inaba/slio/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -31,9 +33,50 @@ func init() {
 }
 
 func runProfileList(cmd *cobra.Command, args []string) error {
-	return errors.New("profile list: not implemented yet")
+	file, err := config.Load()
+	if err != nil {
+		return err
+	}
+	out := cmd.OutOrStdout()
+
+	if len(file.Profiles) == 0 {
+		fmt.Fprintln(out, "No profiles registered. Run `slio auth login` to add one.")
+		return nil
+	}
+
+	names := make([]string, 0, len(file.Profiles))
+	for name := range file.Profiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		p := file.Profiles[name]
+		if name == file.DefaultProfile {
+			fmt.Fprintf(out, "%s\t%s\t(default)\n", name, p.Host)
+		} else {
+			fmt.Fprintf(out, "%s\t%s\n", name, p.Host)
+		}
+	}
+	return nil
 }
 
 func runProfileUse(cmd *cobra.Command, args []string) error {
-	return errors.New("profile use: not implemented yet")
+	name := args[0]
+
+	file, err := config.Load()
+	if err != nil {
+		return err
+	}
+	if _, ok := file.Profiles[name]; !ok {
+		return fmt.Errorf("profile %q not found; registered profiles: %s", name, config.ProfileNames(file))
+	}
+
+	file.DefaultProfile = name
+	if err := file.Save(); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Default profile set to %q.\n", name)
+	return nil
 }
