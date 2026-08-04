@@ -210,6 +210,9 @@ func TestAuthLoginReRegisterSameWorkspaceConfirmed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runAuthLogin() error = %v, stderr = %s", err, stderr)
 	}
+	if !strings.Contains(stderr, "Overwrite the stored token?") {
+		t.Errorf("stderr = %q, want the overwrite confirmation prompt", stderr)
+	}
 
 	f, err := config.Load()
 	if err != nil {
