@@ -22,6 +22,7 @@ description: Read Slack threads, channel history, and search results directly fr
 - **Attachments**: files are shown as metadata (name/type/size) by default. Add `--download` (on `slio thread`) when you need to read an attachment's actual contents; it saves files to a local temp directory and prints their paths so you can read them.
 - **Multiple workspaces**: `slio` auto-selects the right profile from a URL's host. For commands without a URL (`search`, `channel list`), pass `--profile <name>` if the user has more than one workspace registered and the default isn't the right one — check with `slio profile list`.
 - **Structured output**: add `--format json` when you need to parse the result programmatically rather than read it as Markdown.
+- **Output streams**: stdout carries only the data (Markdown, JSON, listings); prompts and status messages go to stderr — read stderr when a command fails.
 - **First-time setup**: if a command fails because no profile is registered, tell the user to run `slio auth login` (they'll need a Slack user token — see the repo README for how to get one).
 
 Run `slio --help` or `slio <command> --help` for the full flag reference; it's the source of truth for exact flags and defaults, so this document doesn't duplicate it.
