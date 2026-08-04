@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/178inaba/slio/internal/config"
 	"github.com/178inaba/slio/internal/slackclient"
-	"github.com/spf13/cobra"
 )
 
 func newAuthTestServer(t *testing.T, host, teamID string) *httptest.Server {
@@ -38,11 +36,8 @@ func stubSlackClientFactory(t *testing.T, srv *httptest.Server) {
 // that carries machine-readable output.
 func runAuthLoginForTest(t *testing.T, stdin string) (string, error) {
 	t.Helper()
-	testCmd := &cobra.Command{}
+	testCmd, out, errOut := newTestCmd(t)
 	testCmd.SetIn(strings.NewReader(stdin))
-	var out, errOut bytes.Buffer
-	testCmd.SetOut(&out)
-	testCmd.SetErr(&errOut)
 
 	err := runAuthLogin(testCmd, nil)
 	if out.Len() > 0 {
@@ -154,11 +149,8 @@ func TestAuthLoginRejectsNonTTYStdin(t *testing.T) {
 	}
 	t.Cleanup(func() { slackClientFactory = defaultSlackClientFactory })
 
-	testCmd := &cobra.Command{}
+	testCmd, _, _ := newTestCmd(t)
 	testCmd.SetIn(r)
-	var out, errOut bytes.Buffer
-	testCmd.SetOut(&out)
-	testCmd.SetErr(&errOut)
 
 	err = runAuthLogin(testCmd, nil)
 	if err == nil {

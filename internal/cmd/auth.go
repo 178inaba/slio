@@ -46,7 +46,8 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 	// Masking the token needs a real terminal. Non-TTY callers (agents, CI)
 	// are pointed at the env var instead; a non-*os.File reader is the test
 	// seam and reads answers line by line.
-	stdinFile, isTTY := terminalFile(cmd.InOrStdin())
+	stdin := cmd.InOrStdin()
+	stdinFile, isTTY := terminalFile(stdin)
 	if stdinFile != nil && !isTTY {
 		return errors.New("auth login is interactive and needs a terminal; set SLIO_TOKEN instead")
 	}
@@ -54,7 +55,7 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 	// Safe to wrap even on the masked path: ReadPassword reads the file
 	// descriptor directly, and this reader consumes nothing until the later
 	// prompts, so the two never disagree about buffered bytes.
-	in := bufio.NewReader(cmd.InOrStdin())
+	in := bufio.NewReader(stdin)
 
 	token, err := promptToken(errOut, in, stdinFile)
 	if err != nil {
@@ -170,14 +171,13 @@ func promptLine(out io.Writer, in *bufio.Reader, prompt string) (string, error) 
 // guaranteed to be a terminal by the guard in runAuthLogin; the test seam
 // falls back to a plain line read.
 func promptToken(out io.Writer, in *bufio.Reader, stdinFile *os.File) (string, error) {
-	const prompt = "Paste your Slack user OAuth token (xoxp-...): "
-	if stdinFile == nil {
-		return promptLine(out, in, prompt)
-	}
-
-	if _, err := fmt.Fprint(out, prompt); err != nil {
+	if _, err := fmt.Fprint(out, "Paste your Slack user OAuth token (xoxp-...): "); err != nil {
 		return "", err
 	}
+	if stdinFile == nil {
+		return readLine(in)
+	}
+
 	token, err := term.ReadPassword(int(stdinFile.Fd()))
 	if err != nil {
 		return "", err
