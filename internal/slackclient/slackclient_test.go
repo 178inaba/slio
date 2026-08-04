@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -192,6 +195,77 @@ func TestSearchMessagesReturnsMatchesAndTotal(t *testing.T) {
 	}
 	if len(matches) != 1 || matches[0].Text != "hello" {
 		t.Errorf("matches = %+v, want one match with text hello", matches)
+	}
+}
+
+func TestDownloadFileSuccess(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Fprint(w, "file contents")
+	}))
+	t.Cleanup(srv.Close)
+	c := New("xoxp-test")
+
+	dest := filepath.Join(t.TempDir(), "sub", "report.txt")
+	if err := c.DownloadFile(context.Background(), srv.URL+"/files-pri/T1-F1/report.txt", dest); err != nil {
+		t.Fatalf("DownloadFile() error = %v", err)
+	}
+
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("read downloaded file: %v", err)
+	}
+	if string(data) != "file contents" {
+		t.Errorf("downloaded content = %q, want %q", data, "file contents")
+	}
+	if gotAuth != "Bearer xoxp-test" {
+		t.Errorf("Authorization header = %q, want Bearer xoxp-test", gotAuth)
+	}
+}
+
+func TestDownloadFileDetectsSignInHTML(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, "<!DOCTYPE html><html>sign in</html>")
+	}))
+	t.Cleanup(srv.Close)
+	c := New("xoxp-test")
+
+	dest := filepath.Join(t.TempDir(), "report.txt")
+	err := c.DownloadFile(context.Background(), srv.URL+"/files-pri/T1-F1/report.txt", dest)
+	if err == nil {
+		t.Fatal("DownloadFile() error = nil, want error for an HTML sign-in response")
+	}
+	if !strings.Contains(err.Error(), "files:read") {
+		t.Errorf("error = %v, want mention of the files:read scope", err)
+	}
+	if _, statErr := os.Stat(dest); statErr == nil {
+		t.Error("destination file exists, want nothing written for an HTML response")
+	}
+}
+
+func TestDownloadFileRetriesOn429ThenSucceeds(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Fprint(w, "ok")
+	}))
+	t.Cleanup(srv.Close)
+	c := New("xoxp-test")
+
+	dest := filepath.Join(t.TempDir(), "report.txt")
+	if err := c.DownloadFile(context.Background(), srv.URL+"/files-pri/T1-F1/report.txt", dest); err != nil {
+		t.Fatalf("DownloadFile() error = %v", err)
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Errorf("calls = %d, want 2 (one 429 then a retry)", got)
 	}
 }
 

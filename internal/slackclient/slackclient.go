@@ -8,7 +8,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/slack-go/slack"
@@ -16,7 +22,8 @@ import (
 
 // Client is a deadline- and retry-aware wrapper around *slack.Client.
 type Client struct {
-	api *slack.Client
+	api   *slack.Client
+	token string
 }
 
 // Option configures a Client constructed by New.
@@ -43,7 +50,7 @@ func New(token string, opts ...Option) *Client {
 	if cfg.apiURL != "" {
 		slackOpts = append(slackOpts, slack.OptionAPIURL(cfg.apiURL))
 	}
-	return &Client{api: slack.New(token, slackOpts...)}
+	return &Client{api: slack.New(token, slackOpts...), token: token}
 }
 
 // AuthTestResult is the subset of auth.test's response slio needs.
@@ -229,6 +236,65 @@ func (c *Client) SearchMessages(ctx context.Context, query string, limit int) (m
 		all = all[:limit]
 	}
 	return all, total, nil
+}
+
+// DownloadFile downloads a Slack file's contents from its url_private,
+// authenticating with the client's own token (url_private requires a
+// bearer token; slio must do the download itself, since only it holds the
+// token), and writes it to destPath. Slack returns an HTML sign-in page
+// with HTTP 200 rather than an error when the token lacks files:read, so
+// that case is detected via Content-Type and reported explicitly rather
+// than silently saving the wrong content.
+func (c *Client) DownloadFile(ctx context.Context, urlPrivate, destPath string) error {
+	return withRetry(ctx, func() error {
+		return c.downloadFileOnce(ctx, urlPrivate, destPath)
+	})
+}
+
+func (c *Client) downloadFileOnce(ctx context.Context, urlPrivate, destPath string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlPrivate, nil)
+	if err != nil {
+		return fmt.Errorf("build download request for %s: %w", urlPrivate, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("download %s: %w", urlPrivate, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		retryAfter := time.Second
+		if v := resp.Header.Get("Retry-After"); v != "" {
+			if secs, err := strconv.Atoi(v); err == nil {
+				retryAfter = time.Duration(secs) * time.Second
+			}
+		}
+		return &slack.RateLimitedError{RetryAfter: retryAfter}
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download %s: unexpected status %s", urlPrivate, resp.Status)
+	}
+	if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") {
+		return fmt.Errorf(
+			"download %s: received an HTML sign-in page instead of the file — the token likely lacks the files:read scope",
+			urlPrivate)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return fmt.Errorf("create download directory: %w", err)
+	}
+	f, err := os.Create(destPath)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", destPath, err)
+	}
+	defer f.Close()
+
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		return fmt.Errorf("write %s: %w", destPath, err)
+	}
+	return nil
 }
 
 // GetUserInfo fetches a user's profile, for resolving display names.

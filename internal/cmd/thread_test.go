@@ -87,24 +87,40 @@ func TestRunThreadUnregisteredWorkspace(t *testing.T) {
 	}
 }
 
-func TestRunThreadDownloadNotYetImplemented(t *testing.T) {
+func TestRunThreadDownloadSavesAttachmentAndPrintsPath(t *testing.T) {
 	seedProfile(t, "myws.slack.com")
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
-	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
-		"conversations.replies": func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, `{"ok":true,"messages":[{"type":"message","user":"U1","text":"hi","ts":"1234567890.000001","channel":"C1"}],"has_more":false}`)
-		},
-	}))
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
+
+	mux.HandleFunc("/conversations.replies", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"ok":true,"messages":[{"type":"message","user":"U1","text":"hi","ts":"1234567890.000001","channel":"C1",`+
+			`"files":[{"id":"F1","name":"report.txt","filetype":"text","size":13,"url_private":"%s/files-pri/T1-F1/report.txt"}]}],"has_more":false}`,
+			srv.URL)
+	})
+	mux.HandleFunc("/files-pri/T1-F1/report.txt", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Fprint(w, "file contents")
+	})
 
 	threadDownloadFlag = true
 	t.Cleanup(func() { threadDownloadFlag = false })
 
 	testCmd := &cobra.Command{}
-	testCmd.SetOut(&bytes.Buffer{})
-	if err := runThread(testCmd, []string{"https://myws.slack.com/archives/C1/p1234567890000001"}); err == nil {
-		t.Fatal("runThread() error = nil, want error since --download isn't implemented yet")
+	var out bytes.Buffer
+	testCmd.SetOut(&out)
+	if err := runThread(testCmd, []string{"https://myws.slack.com/archives/C1/p1234567890000001"}); err != nil {
+		t.Fatalf("runThread() error = %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "report.txt") {
+		t.Errorf("output = %q, want it to mention report.txt", got)
+	}
+	if !strings.Contains(got, "saved to") {
+		t.Errorf("output = %q, want it to show the local download path", got)
 	}
 }

@@ -1,7 +1,8 @@
 package cmd
 
 import (
-	"errors"
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/178inaba/slio/internal/cache"
@@ -49,8 +50,12 @@ func runThread(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	var downloadDir string
 	if threadDownloadFlag {
-		return errors.New("thread --download: not implemented yet")
+		downloadDir, err = os.MkdirTemp("", "slio-thread-")
+		if err != nil {
+			return fmt.Errorf("create download directory: %w", err)
+		}
 	}
 
 	resolver := newUserResolver(ctx, client, store, time.Now())
@@ -59,6 +64,13 @@ func runThread(cmd *cobra.Command, args []string) error {
 		fm, err := messageFromMsg(m, host, resolver.resolve, false)
 		if err != nil {
 			return err
+		}
+		if threadDownloadFlag && len(m.Files) > 0 {
+			files, err := downloadFiles(ctx, client, downloadDir, m.Files)
+			if err != nil {
+				return err
+			}
+			fm.Files = files
 		}
 		messages = append(messages, fm)
 	}

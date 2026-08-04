@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -126,6 +127,28 @@ func quotedBlocksFromMsg(m slack.Message) []string {
 func buildThreadPermalink(host, channel, ts string) string {
 	return fmt.Sprintf("https://%s/archives/%s/p%s?thread_ts=%s&cid=%s",
 		host, channel, strings.Replace(ts, ".", "", 1), ts, channel)
+}
+
+// downloadFiles downloads each file's contents into destDir, returning
+// format.FileInfo entries with LocalPath set so the output tells the agent
+// where to read them. Files with no URLPrivate (never observed in
+// practice, but the field is optional in the API) are reported as
+// metadata only, matching the default (non-download) rendering.
+func downloadFiles(ctx context.Context, client *slackclient.Client, destDir string, files []slack.File) ([]format.FileInfo, error) {
+	out := make([]format.FileInfo, len(files))
+	for i, f := range files {
+		out[i] = format.FileInfo{Name: f.Name, Type: f.Filetype, Size: int64(f.Size)}
+		if f.URLPrivate == "" {
+			continue
+		}
+
+		dest := filepath.Join(destDir, f.ID+"-"+filepath.Base(f.Name))
+		if err := client.DownloadFile(ctx, f.URLPrivate, dest); err != nil {
+			return nil, fmt.Errorf("download attachment %s: %w", f.Name, err)
+		}
+		out[i].LocalPath = dest
+	}
+	return out, nil
 }
 
 func filesFromMsg(files []slack.File) []format.FileInfo {
