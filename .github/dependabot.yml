@@ -4,19 +4,13 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    assignees:
-      - 178inaba
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    assignees:
-      - 178inaba
   # Bumps the golangci-lint image tag in compose.yaml, which is where the
   # version CI installs comes from.
   - package-ecosystem: docker-compose
     directory: /
     schedule:
       interval: weekly
-    assignees:
-      - 178inaba
