@@ -77,6 +77,19 @@ This repo ships an [Agent Skill](./skills/slio/SKILL.md) that tells an AI agent 
 - copying `skills/slio/` into your agent's skills directory (e.g. `~/.claude/skills/slio/` for Claude Code), or
 - using a skill installer that consumes GitHub repos directly, e.g. [`npx skills`](https://www.npmjs.com/package/skills).
 
+## Development
+
+```sh
+go build ./...
+go test -race ./...
+
+# Lint runs in Docker so the version matches CI — see compose.yaml
+docker compose run --rm lint
+
+# Let golangci-lint apply the fixes it can make itself
+docker compose run --rm lint --fix
+```
+
 ## Out of scope
 
 `slio` never posts, reacts, or uploads — replies are drafted by the AI and posted by the human. Canvases and other non-message content, browser-session tokens (`xoxc`/`xoxd`), and OS keychain storage are also out of scope. See [the tracking issue](https://github.com/178inaba/slio/issues/1) for the full list.

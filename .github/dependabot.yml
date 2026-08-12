@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # Bumps the golangci-lint image tag in compose.yaml, which is where the
+  # version CI installs comes from.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
