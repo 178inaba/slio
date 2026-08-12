@@ -22,9 +22,9 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      # Built separately from the tests so a compile failure in a package
-      # without test files (the root main.go) still fails the job.
-      - run: go build ./...
+      # No separate build step: go test compiles every matched package,
+      # including ones without test files (the root main.go), so a compile
+      # failure there fails this step too.
       - run: go test -race ./...
 
   lint:
@@ -42,7 +42,8 @@ jobs:
       # and the pin would stop applying while the job stayed green.
       - id: version
         run: |
-          version=$(yq '.services.lint.image' compose.yaml | cut -d: -f2-)
+          image=$(yq '.services.lint.image' compose.yaml)
+          version=${image##*:}
           [[ "$version" == v* ]] || { echo "::error::could not read the golangci-lint version from compose.yaml (got '$version')"; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: golangci/golangci-lint-action@v9
