@@ -137,11 +137,17 @@ func TestAuthLoginRejectsNonTTYStdin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("os.Pipe() error = %v", err)
 	}
-	t.Cleanup(func() { r.Close() })
+	t.Cleanup(func() {
+		if err := r.Close(); err != nil {
+			t.Errorf("closing the read end of the pipe: %v", err)
+		}
+	})
 	if _, err := w.WriteString("xoxp-piped\n"); err != nil {
 		t.Fatalf("writing the token to the pipe: %v", err)
 	}
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatalf("closing the write end of the pipe: %v", err)
+	}
 
 	slackClientFactory = func(token string) *slackclient.Client {
 		t.Fatal("slackClientFactory should not be called without a terminal")
