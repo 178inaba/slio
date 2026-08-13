@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+## Agent contract
+
 slio's primary consumer is an AI coding agent calling it from a shell; the conventions below exist to keep that contract stable.
 
 - **Three-way documentation sync** — user-facing CLI behaviour is stated in `README.md`, `skills/slio/SKILL.md`, and the cobra help strings under `internal/cmd/`. Changing the CLI means updating all three in the same PR. Overlaps today, each stated in more than one of the three: the default `md` output format, profile and environment-variable resolution, the 90 s default `--timeout` with its exit codes, and `--download` on `slio thread`.
