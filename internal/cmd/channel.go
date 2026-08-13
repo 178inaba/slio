@@ -36,7 +36,7 @@ type jsonChannel struct {
 }
 
 func runChannelList(cmd *cobra.Command, g *globalFlags) error {
-	ctx, cancel := commandContext(g.timeoutSeconds)
+	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
 	creds, _, cacheKey, err := resolveWorkspace(ctx, g.profile, "")

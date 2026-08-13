@@ -34,7 +34,7 @@ func runThread(cmd *cobra.Command, args []string, g *globalFlags, download bool)
 		return err
 	}
 
-	ctx, cancel := commandContext(g.timeoutSeconds)
+	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
 	creds, host, cacheKey, err := resolveWorkspace(ctx, g.profile, ref.Host)

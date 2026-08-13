@@ -71,7 +71,7 @@ func runAuthLogin(cmd *cobra.Command, g *globalFlags) error {
 			"because search.messages requires a user token", "xoxp-", "xoxb-")
 	}
 
-	ctx, cancel := commandContext(g.timeoutSeconds)
+	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 	result, err := slackClientFactory(token).AuthTest(ctx)
 	if err != nil {

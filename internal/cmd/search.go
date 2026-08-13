@@ -31,7 +31,7 @@ func newSearchCmd(g *globalFlags) *cobra.Command {
 func runSearch(cmd *cobra.Command, args []string, g *globalFlags, limit int) error {
 	query := args[0]
 
-	ctx, cancel := commandContext(g.timeoutSeconds)
+	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
 	creds, _, cacheKey, err := resolveWorkspace(ctx, g.profile, "")

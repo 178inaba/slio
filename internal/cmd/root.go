@@ -11,7 +11,7 @@ import (
 	"golang.org/x/term"
 )
 
-const defaultTimeoutSeconds = 90
+const defaultTimeout = 90 * time.Second
 
 // globalFlags carries the root persistent flag values into each command's
 // RunE. newRootCmd binds them and hands the same pointer to every
@@ -19,9 +19,9 @@ const defaultTimeoutSeconds = 90
 // level. The values are only final after flag parsing, so a RunE closure
 // must read the fields when it runs rather than copy them at construction.
 type globalFlags struct {
-	profile        string
-	format         string
-	timeoutSeconds int
+	profile string
+	format  string
+	timeout time.Duration
 }
 
 func newRootCmd() *cobra.Command {
@@ -43,8 +43,8 @@ discussions directly instead of relying on pasted screenshots.`,
 		"profile to use, overriding URL-based auto-selection and SLIO_PROFILE")
 	cmd.PersistentFlags().StringVar(&g.format, "format", "md",
 		`output format: "md" or "json"`)
-	cmd.PersistentFlags().IntVar(&g.timeoutSeconds, "timeout", defaultTimeoutSeconds,
-		"overall deadline in seconds for the invocation (0 = no timeout)")
+	cmd.PersistentFlags().DurationVar(&g.timeout, "timeout", defaultTimeout,
+		"overall deadline for the invocation, as a Go duration (0 = no deadline)")
 
 	cmd.AddCommand(
 		newThreadCmd(&g),
@@ -83,12 +83,16 @@ func terminalFile(in io.Reader) (*os.File, bool) {
 	return f, term.IsTerminal(int(f.Fd()))
 }
 
-// commandContext returns a context bound to --timeout. A zero timeout means
-// no deadline: context.WithTimeout(ctx, 0) would expire immediately, so that
-// case skips WithTimeout entirely.
-func commandContext(timeoutSeconds int) (context.Context, context.CancelFunc) {
-	if timeoutSeconds <= 0 {
-		return context.Background(), func() {}
+// commandContext returns a context bound to --timeout. It must be called at
+// the point the first request is about to be issued, not at the top of RunE:
+// `auth login` prompts for credentials first, and starting the clock before
+// those prompts would fail a user who merely types slowly.
+//
+// A zero timeout means no deadline: context.WithTimeout(ctx, 0) would expire
+// immediately, so that case returns the command's context unchanged.
+func commandContext(cmd *cobra.Command, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return cmd.Context(), func() {}
 	}
-	return context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
+	return context.WithTimeout(cmd.Context(), timeout)
 }
