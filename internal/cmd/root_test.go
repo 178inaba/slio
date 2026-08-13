@@ -157,6 +157,15 @@ func TestDescribeContextError(t *testing.T) {
 			wantContain: "interrupted",
 		},
 		{
+			// The deadline is still reachable through the wrapped error, so
+			// only the order of the two checks keeps this from being
+			// reported as a timeout. exitCode has the matching case.
+			name:        "an interrupt outranks a deadline that expired with it",
+			signalCtx:   interrupted,
+			err:         fmt.Errorf("fetch thread: %w", context.DeadlineExceeded),
+			wantContain: "interrupted",
+		},
+		{
 			name:        "other errors pass through unchanged",
 			signalCtx:   live,
 			err:         errors.New("channel not found"),
