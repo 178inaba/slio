@@ -70,13 +70,11 @@ func TestRunHistoryViaSlioTokenIncludesThreadPermalink(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	root, out, _ := newTestRoot(t)
-	root.SetArgs([]string{"history", "C1"})
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
+	got, _, err := runSlio(t, "history", "C1")
+	if err != nil {
+		t.Fatalf("slio history: %v", err)
 	}
 
-	got := out.String()
 	if !strings.Contains(got, "myws.slack.com") {
 		t.Errorf("output = %q, want a thread permalink built from the auth.test-resolved host", got)
 	}

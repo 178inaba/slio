@@ -50,13 +50,11 @@ func TestRunThreadRendersFullThread(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	root, out, _ := newTestRoot(t)
-	root.SetArgs([]string{"thread", "https://myws.slack.com/archives/C1/p1234567890000001"})
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
+	got, _, err := runSlio(t, "thread", "https://myws.slack.com/archives/C1/p1234567890000001")
+	if err != nil {
+		t.Fatalf("slio thread: %v", err)
 	}
 
-	got := out.String()
 	if !strings.Contains(got, "Alice") {
 		t.Errorf("output = %q, want it to contain the resolved author Alice", got)
 	}
@@ -69,11 +67,9 @@ func TestRunThreadUnregisteredWorkspace(t *testing.T) {
 	seedProfile(t, "myws.slack.com")
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
-	root, _, _ := newTestRoot(t)
-	root.SetArgs([]string{"thread", "https://unknown.slack.com/archives/C1/p1234567890000001"})
-	err := root.Execute()
+	_, _, err := runSlio(t, "thread", "https://unknown.slack.com/archives/C1/p1234567890000001")
 	if err == nil {
-		t.Fatal("Execute() error = nil, want error for an unregistered workspace")
+		t.Fatal("slio thread: error = nil, want error for an unregistered workspace")
 	}
 	if !strings.Contains(err.Error(), "unknown.slack.com") || !strings.Contains(err.Error(), "myws") || !strings.Contains(err.Error(), "auth login") {
 		t.Errorf("error = %v, want it to mention the host, registered profiles, and auth login", err)
@@ -99,13 +95,11 @@ func TestRunThreadDownloadSavesAttachmentAndPrintsPath(t *testing.T) {
 		_, _ = fmt.Fprint(w, "file contents")
 	})
 
-	root, out, _ := newTestRoot(t)
-	root.SetArgs([]string{"thread", "https://myws.slack.com/archives/C1/p1234567890000001", "--download"})
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
+	got, _, err := runSlio(t, "thread", "https://myws.slack.com/archives/C1/p1234567890000001", "--download")
+	if err != nil {
+		t.Fatalf("slio thread --download: %v", err)
 	}
 
-	got := out.String()
 	if !strings.Contains(got, "report.txt") {
 		t.Errorf("output = %q, want it to mention report.txt", got)
 	}

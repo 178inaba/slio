@@ -37,13 +37,13 @@ func newAuthLoginCmd(g *globalFlags) *cobra.Command {
 		Use:   "login",
 		Short: "Register a user token interactively",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAuthLogin(cmd, args, g)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runAuthLogin(cmd, g)
 		},
 	}
 }
 
-func runAuthLogin(cmd *cobra.Command, args []string, g *globalFlags) error {
+func runAuthLogin(cmd *cobra.Command, g *globalFlags) error {
 	// Prompts and status messages go to stderr so stdout stays reserved for
 	// machine-readable output. auth login has none, so it writes no stdout.
 	errOut := cmd.ErrOrStderr()

@@ -52,6 +52,8 @@ discussions directly instead of relying on pasted screenshots.`,
 		newSearchCmd(&g),
 		newChannelCmd(&g),
 		newAuthCmd(&g),
+		// profile takes no globalFlags: its subcommands only read and write
+		// the config file, so they resolve no workspace and issue no request.
 		newProfileCmd(),
 	)
 

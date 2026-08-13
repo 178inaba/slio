@@ -12,11 +12,9 @@ import (
 func TestInvalidFormatIsRejected(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	root, _, _ := newTestRoot(t)
-	root.SetArgs([]string{"channel", "list", "--format", "yaml"})
-	err := root.Execute()
+	_, _, err := runSlio(t, "channel", "list", "--format", "yaml")
 	if err == nil {
-		t.Fatal("Execute() error = nil, want error for an unsupported --format")
+		t.Fatal("slio channel list --format yaml: error = nil, want error for an unsupported --format")
 	}
 	if !strings.Contains(err.Error(), "invalid --format") {
 		t.Errorf("error = %v, want it to report an invalid --format", err)

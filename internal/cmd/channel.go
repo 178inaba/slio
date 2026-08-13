@@ -24,8 +24,8 @@ func newChannelListCmd(g *globalFlags) *cobra.Command {
 		Use:   "list",
 		Short: "List channels visible to the user",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runChannelList(cmd, args, g)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runChannelList(cmd, g)
 		},
 	}
 }
@@ -35,7 +35,7 @@ type jsonChannel struct {
 	Name string `json:"name"`
 }
 
-func runChannelList(cmd *cobra.Command, args []string, g *globalFlags) error {
+func runChannelList(cmd *cobra.Command, g *globalFlags) error {
 	ctx, cancel := commandContext(g.timeoutSeconds)
 	defer cancel()
 
