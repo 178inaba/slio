@@ -1,15 +1,12 @@
 package cmd
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
-
-	"github.com/spf13/cobra"
 )
 
 func TestRunSearchPassesQueryThroughUnchanged(t *testing.T) {
@@ -30,13 +27,10 @@ func TestRunSearchPassesQueryThroughUnchanged(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	testCmd := &cobra.Command{}
-	var out bytes.Buffer
-	testCmd.SetOut(&out)
-
 	query := "in:#general from:@someone hello"
-	if err := runSearch(testCmd, []string{query}); err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+	got, _, err := runSlio(t, "search", query)
+	if err != nil {
+		t.Fatalf("slio search: %v", err)
 	}
 
 	unescaped, err := url.QueryUnescape(gotQuery)
@@ -46,8 +40,8 @@ func TestRunSearchPassesQueryThroughUnchanged(t *testing.T) {
 	if unescaped != query {
 		t.Errorf("query sent = %q, want %q", unescaped, query)
 	}
-	if !strings.Contains(out.String(), "hi") {
-		t.Errorf("output = %q, want it to contain the match text", out.String())
+	if !strings.Contains(got, "hi") {
+		t.Errorf("output = %q, want it to contain the match text", got)
 	}
 }
 
@@ -65,18 +59,11 @@ func TestRunSearchTrailingMoreResultsNotice(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	searchLimitFlag = 1
-	t.Cleanup(func() { searchLimitFlag = defaultSearchLimit })
-
-	testCmd := &cobra.Command{}
-	var out bytes.Buffer
-	testCmd.SetOut(&out)
-
-	if err := runSearch(testCmd, []string{"hello"}); err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+	got, _, err := runSlio(t, "search", "hello", "--limit", "1")
+	if err != nil {
+		t.Fatalf("slio search --limit 1: %v", err)
 	}
 
-	got := out.String()
 	noticeIdx := strings.Index(got, "more results")
 	textIdx := strings.LastIndex(got, "hi\n")
 	if noticeIdx == -1 {

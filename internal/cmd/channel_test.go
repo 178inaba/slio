@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,7 +10,6 @@ import (
 	"time"
 
 	"github.com/178inaba/slio/internal/cache"
-	"github.com/spf13/cobra"
 )
 
 func TestRunChannelListMarkdown(t *testing.T) {
@@ -26,15 +24,11 @@ func TestRunChannelListMarkdown(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	testCmd := &cobra.Command{}
-	var out bytes.Buffer
-	testCmd.SetOut(&out)
-
-	if err := runChannelList(testCmd, nil); err != nil {
-		t.Fatalf("runChannelList() error = %v", err)
+	got, _, err := runSlio(t, "channel", "list")
+	if err != nil {
+		t.Fatalf("slio channel list: %v", err)
 	}
 
-	got := out.String()
 	if !strings.Contains(got, "general") || !strings.Contains(got, "random") {
 		t.Errorf("output = %q, want both channels listed", got)
 	}
@@ -52,20 +46,14 @@ func TestRunChannelListJSON(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	formatFlag = "json"
-	t.Cleanup(func() { formatFlag = "md" })
-
-	testCmd := &cobra.Command{}
-	var out bytes.Buffer
-	testCmd.SetOut(&out)
-
-	if err := runChannelList(testCmd, nil); err != nil {
-		t.Fatalf("runChannelList() error = %v", err)
+	got, _, err := runSlio(t, "channel", "list", "--format", "json")
+	if err != nil {
+		t.Fatalf("slio channel list --format json: %v", err)
 	}
 
 	var channels []jsonChannel
-	if err := json.Unmarshal(out.Bytes(), &channels); err != nil {
-		t.Fatalf("unmarshal output: %v; output = %s", err, out.String())
+	if err := json.Unmarshal([]byte(got), &channels); err != nil {
+		t.Fatalf("unmarshal output: %v; output = %s", err, got)
 	}
 	if len(channels) != 1 || channels[0].ID != "C1" || channels[0].Name != "general" {
 		t.Errorf("channels = %+v, want [{C1 general}]", channels)
@@ -84,10 +72,8 @@ func TestRunChannelListPopulatesCacheForNameResolution(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	testCmd := &cobra.Command{}
-	testCmd.SetOut(&bytes.Buffer{})
-	if err := runChannelList(testCmd, nil); err != nil {
-		t.Fatalf("runChannelList() error = %v", err)
+	if _, _, err := runSlio(t, "channel", "list"); err != nil {
+		t.Fatalf("slio channel list: %v", err)
 	}
 
 	store, err := cache.Open("myws")

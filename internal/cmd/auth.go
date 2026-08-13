@@ -22,23 +22,28 @@ func defaultSlackClientFactory(token string) *slackclient.Client {
 
 var slackClientFactory = defaultSlackClientFactory
 
-var authCmd = &cobra.Command{
-	Use:   "auth",
-	Short: "Manage authentication",
+func newAuthCmd(g *globalFlags) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "auth",
+		Short: "Manage authentication",
+	}
+	cmd.AddCommand(newAuthLoginCmd(g))
+
+	return cmd
 }
 
-var authLoginCmd = &cobra.Command{
-	Use:   "login",
-	Short: "Register a user token interactively",
-	Args:  cobra.NoArgs,
-	RunE:  runAuthLogin,
+func newAuthLoginCmd(g *globalFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "login",
+		Short: "Register a user token interactively",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runAuthLogin(cmd, g)
+		},
+	}
 }
 
-func init() {
-	authCmd.AddCommand(authLoginCmd)
-}
-
-func runAuthLogin(cmd *cobra.Command, args []string) error {
+func runAuthLogin(cmd *cobra.Command, g *globalFlags) error {
 	// Prompts and status messages go to stderr so stdout stays reserved for
 	// machine-readable output. auth login has none, so it writes no stdout.
 	errOut := cmd.ErrOrStderr()
@@ -66,7 +71,7 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 			"because search.messages requires a user token", "xoxp-", "xoxb-")
 	}
 
-	ctx, cancel := commandContext()
+	ctx, cancel := commandContext(g.timeoutSeconds)
 	defer cancel()
 	result, err := slackClientFactory(token).AuthTest(ctx)
 	if err != nil {

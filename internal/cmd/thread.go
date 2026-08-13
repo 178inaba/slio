@@ -11,30 +11,33 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var threadDownloadFlag bool
+func newThreadCmd(g *globalFlags) *cobra.Command {
+	var download bool
 
-var threadCmd = &cobra.Command{
-	Use:   "thread <url>",
-	Short: "Fetch a full thread by its Slack message permalink",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runThread,
-}
-
-func init() {
-	threadCmd.Flags().BoolVar(&threadDownloadFlag, "download", false,
+	cmd := &cobra.Command{
+		Use:   "thread <url>",
+		Short: "Fetch a full thread by its Slack message permalink",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runThread(cmd, args, g, download)
+		},
+	}
+	cmd.Flags().BoolVar(&download, "download", false,
 		"download attachments to a local temp directory and print their paths")
+
+	return cmd
 }
 
-func runThread(cmd *cobra.Command, args []string) error {
+func runThread(cmd *cobra.Command, args []string, g *globalFlags, download bool) error {
 	ref, err := parse.ThreadURL(args[0])
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel := commandContext()
+	ctx, cancel := commandContext(g.timeoutSeconds)
 	defer cancel()
 
-	creds, host, cacheKey, err := resolveWorkspace(ctx, ref.Host)
+	creds, host, cacheKey, err := resolveWorkspace(ctx, g.profile, ref.Host)
 	if err != nil {
 		return err
 	}
@@ -51,7 +54,7 @@ func runThread(cmd *cobra.Command, args []string) error {
 	}
 
 	var downloadDir string
-	if threadDownloadFlag {
+	if download {
 		downloadDir, err = os.MkdirTemp("", "slio-thread-")
 		if err != nil {
 			return fmt.Errorf("create download directory: %w", err)
@@ -65,7 +68,7 @@ func runThread(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		if threadDownloadFlag && len(m.Files) > 0 {
+		if download && len(m.Files) > 0 {
 			files, err := downloadFiles(ctx, client, downloadDir, m.Files)
 			if err != nil {
 				return err
@@ -78,5 +81,5 @@ func runThread(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	return writeMessages(cmd, messages, resolver.resolve, "", "")
+	return writeMessages(cmd, g.format, messages, resolver.resolve, "", "")
 }

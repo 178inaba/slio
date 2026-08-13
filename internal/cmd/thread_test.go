@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/178inaba/slio/internal/config"
-	"github.com/spf13/cobra"
 )
 
 func newSlackAPIMux(handlers map[string]http.HandlerFunc) http.Handler {
@@ -52,16 +50,11 @@ func TestRunThreadRendersFullThread(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	testCmd := &cobra.Command{}
-	var out bytes.Buffer
-	testCmd.SetOut(&out)
-
-	err := runThread(testCmd, []string{"https://myws.slack.com/archives/C1/p1234567890000001"})
+	got, _, err := runSlio(t, "thread", "https://myws.slack.com/archives/C1/p1234567890000001")
 	if err != nil {
-		t.Fatalf("runThread() error = %v", err)
+		t.Fatalf("slio thread: %v", err)
 	}
 
-	got := out.String()
 	if !strings.Contains(got, "Alice") {
 		t.Errorf("output = %q, want it to contain the resolved author Alice", got)
 	}
@@ -74,13 +67,9 @@ func TestRunThreadUnregisteredWorkspace(t *testing.T) {
 	seedProfile(t, "myws.slack.com")
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
-	testCmd := &cobra.Command{}
-	var out bytes.Buffer
-	testCmd.SetOut(&out)
-
-	err := runThread(testCmd, []string{"https://unknown.slack.com/archives/C1/p1234567890000001"})
+	_, _, err := runSlio(t, "thread", "https://unknown.slack.com/archives/C1/p1234567890000001")
 	if err == nil {
-		t.Fatal("runThread() error = nil, want error for an unregistered workspace")
+		t.Fatal("slio thread: error = nil, want error for an unregistered workspace")
 	}
 	if !strings.Contains(err.Error(), "unknown.slack.com") || !strings.Contains(err.Error(), "myws") || !strings.Contains(err.Error(), "auth login") {
 		t.Errorf("error = %v, want it to mention the host, registered profiles, and auth login", err)
@@ -106,17 +95,11 @@ func TestRunThreadDownloadSavesAttachmentAndPrintsPath(t *testing.T) {
 		_, _ = fmt.Fprint(w, "file contents")
 	})
 
-	threadDownloadFlag = true
-	t.Cleanup(func() { threadDownloadFlag = false })
-
-	testCmd := &cobra.Command{}
-	var out bytes.Buffer
-	testCmd.SetOut(&out)
-	if err := runThread(testCmd, []string{"https://myws.slack.com/archives/C1/p1234567890000001"}); err != nil {
-		t.Fatalf("runThread() error = %v", err)
+	got, _, err := runSlio(t, "thread", "https://myws.slack.com/archives/C1/p1234567890000001", "--download")
+	if err != nil {
+		t.Fatalf("slio thread --download: %v", err)
 	}
 
-	got := out.String()
 	if !strings.Contains(got, "report.txt") {
 		t.Errorf("output = %q, want it to mention report.txt", got)
 	}

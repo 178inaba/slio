@@ -9,20 +9,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var channelCmd = &cobra.Command{
-	Use:   "channel",
-	Short: "Manage and inspect channels",
+func newChannelCmd(g *globalFlags) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "channel",
+		Short: "Manage and inspect channels",
+	}
+	cmd.AddCommand(newChannelListCmd(g))
+
+	return cmd
 }
 
-var channelListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List channels visible to the user",
-	Args:  cobra.NoArgs,
-	RunE:  runChannelList,
-}
-
-func init() {
-	channelCmd.AddCommand(channelListCmd)
+func newChannelListCmd(g *globalFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List channels visible to the user",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runChannelList(cmd, g)
+		},
+	}
 }
 
 type jsonChannel struct {
@@ -30,11 +35,11 @@ type jsonChannel struct {
 	Name string `json:"name"`
 }
 
-func runChannelList(cmd *cobra.Command, args []string) error {
-	ctx, cancel := commandContext()
+func runChannelList(cmd *cobra.Command, g *globalFlags) error {
+	ctx, cancel := commandContext(g.timeoutSeconds)
 	defer cancel()
 
-	creds, _, cacheKey, err := resolveWorkspace(ctx, "")
+	creds, _, cacheKey, err := resolveWorkspace(ctx, g.profile, "")
 	if err != nil {
 		return err
 	}
@@ -54,7 +59,7 @@ func runChannelList(cmd *cobra.Command, args []string) error {
 	}
 
 	out := cmd.OutOrStdout()
-	if formatFlag == "json" {
+	if g.format == "json" {
 		list := make([]jsonChannel, len(channels))
 		for i, c := range channels {
 			list[i] = jsonChannel{ID: c.ID, Name: c.Name}

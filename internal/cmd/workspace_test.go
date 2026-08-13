@@ -18,7 +18,7 @@ func TestResolveWorkspaceViaSlioToken(t *testing.T) {
 	srv := newAuthTestServer(t, "myws.slack.com", "T1")
 	stubSlackClientFactory(t, srv)
 
-	creds, host, cacheKey, err := resolveWorkspace(context.Background(), "")
+	creds, host, cacheKey, err := resolveWorkspace(context.Background(), "", "")
 	if err != nil {
 		t.Fatalf("resolveWorkspace() error = %v", err)
 	}
@@ -44,7 +44,7 @@ func TestResolveWorkspaceViaProfileDoesNotCallAuthTest(t *testing.T) {
 		return nil
 	}
 
-	_, host, cacheKey, err := resolveWorkspace(context.Background(), "")
+	_, host, cacheKey, err := resolveWorkspace(context.Background(), "", "")
 	if err != nil {
 		t.Fatalf("resolveWorkspace() error = %v", err)
 	}
@@ -70,12 +70,11 @@ func TestRunHistoryViaSlioTokenIncludesThreadPermalink(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	testCmd, out, _ := newTestCmd(t)
-	if err := runHistory(testCmd, []string{"C1"}); err != nil {
-		t.Fatalf("runHistory() error = %v", err)
+	got, _, err := runSlio(t, "history", "C1")
+	if err != nil {
+		t.Fatalf("slio history: %v", err)
 	}
 
-	got := out.String()
 	if !strings.Contains(got, "myws.slack.com") {
 		t.Errorf("output = %q, want a thread permalink built from the auth.test-resolved host", got)
 	}

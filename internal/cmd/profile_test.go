@@ -1,37 +1,24 @@
 package cmd
 
 import (
-	"bytes"
 	"strings"
 	"testing"
 
 	"github.com/178inaba/slio/internal/config"
-	"github.com/spf13/cobra"
 )
-
-// newTestCmd returns a command wired to separate stdout and stderr buffers,
-// so tests can assert which stream a message went to.
-func newTestCmd(t *testing.T) (cmd *cobra.Command, stdout, stderr *bytes.Buffer) {
-	t.Helper()
-	testCmd := &cobra.Command{}
-	var out, errOut bytes.Buffer
-	testCmd.SetOut(&out)
-	testCmd.SetErr(&errOut)
-	return testCmd, &out, &errOut
-}
 
 func TestProfileListNoProfiles(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	testCmd, out, errOut := newTestCmd(t)
-	if err := runProfileList(testCmd, nil); err != nil {
-		t.Fatalf("runProfileList() error = %v", err)
+	stdout, stderr, err := runSlio(t, "profile", "list")
+	if err != nil {
+		t.Fatalf("slio profile list: %v", err)
 	}
-	if !strings.Contains(errOut.String(), "No profiles registered") {
-		t.Errorf("stderr = %q, want mention of no profiles registered", errOut.String())
+	if !strings.Contains(stderr, "No profiles registered") {
+		t.Errorf("stderr = %q, want mention of no profiles registered", stderr)
 	}
-	if out.Len() > 0 {
-		t.Errorf("stdout = %q, want empty when no profile is registered", out.String())
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty when no profile is registered", stdout)
 	}
 }
 
@@ -48,12 +35,11 @@ func TestProfileListShowsProfiles(t *testing.T) {
 		t.Fatalf("seed config Save() error = %v", err)
 	}
 
-	testCmd, out, _ := newTestCmd(t)
-	if err := runProfileList(testCmd, nil); err != nil {
-		t.Fatalf("runProfileList() error = %v", err)
+	got, _, err := runSlio(t, "profile", "list")
+	if err != nil {
+		t.Fatalf("slio profile list: %v", err)
 	}
 
-	got := out.String()
 	if !strings.Contains(got, "myws") || !strings.Contains(got, "myws.slack.com") {
 		t.Errorf("output = %q, want mention of myws profile", got)
 	}
@@ -78,15 +64,15 @@ func TestProfileUseSwitchesDefault(t *testing.T) {
 		t.Fatalf("seed config Save() error = %v", err)
 	}
 
-	testCmd, out, errOut := newTestCmd(t)
-	if err := runProfileUse(testCmd, []string{"otherws"}); err != nil {
-		t.Fatalf("runProfileUse() error = %v", err)
+	stdout, stderr, err := runSlio(t, "profile", "use", "otherws")
+	if err != nil {
+		t.Fatalf("slio profile use: %v", err)
 	}
-	if !strings.Contains(errOut.String(), "otherws") {
-		t.Errorf("stderr = %q, want mention of otherws", errOut.String())
+	if !strings.Contains(stderr, "otherws") {
+		t.Errorf("stderr = %q, want mention of otherws", stderr)
 	}
-	if out.Len() > 0 {
-		t.Errorf("stdout = %q, want empty", out.String())
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
 	}
 
 	got, err := config.Load()
@@ -110,10 +96,9 @@ func TestProfileUseUnknownName(t *testing.T) {
 		t.Fatalf("seed config Save() error = %v", err)
 	}
 
-	testCmd, _, _ := newTestCmd(t)
-	err := runProfileUse(testCmd, []string{"nope"})
+	_, _, err := runSlio(t, "profile", "use", "nope")
 	if err == nil {
-		t.Fatal("runProfileUse() error = nil, want error")
+		t.Fatal("slio profile use: error = nil, want error")
 	}
 	if !strings.Contains(err.Error(), "myws") {
 		t.Errorf("error = %v, want mention of registered profiles", err)
