@@ -13,7 +13,7 @@ import (
 // Prefer runSlio; this is for tests that also need to script stdin.
 func newTestRoot(t *testing.T) (root *cobra.Command, stdout, stderr *bytes.Buffer) {
 	t.Helper()
-	testRoot := newRootCmd()
+	testRoot := newRootCmd(&globalFlags{})
 	var out, errOut bytes.Buffer
 	testRoot.SetOut(&out)
 	testRoot.SetErr(&errOut)

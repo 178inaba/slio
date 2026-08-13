@@ -12,29 +12,33 @@ import (
 )
 
 func newThreadCmd(g *globalFlags) *cobra.Command {
-	var download bool
+	var (
+		download  bool
+		outFormat string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "thread <url>",
 		Short: "Fetch a full thread by its Slack message permalink",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runThread(cmd, args, g, download)
+			return runThread(cmd, args, g, download, outFormat)
 		},
 	}
 	cmd.Flags().BoolVar(&download, "download", false,
 		"download attachments to a local temp directory and print their paths")
+	addFormatFlag(cmd, &outFormat)
 
 	return cmd
 }
 
-func runThread(cmd *cobra.Command, args []string, g *globalFlags, download bool) error {
+func runThread(cmd *cobra.Command, args []string, g *globalFlags, download bool, outFormat string) error {
 	ref, err := parse.ThreadURL(args[0])
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel := commandContext(g.timeoutSeconds)
+	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
 	creds, host, cacheKey, err := resolveWorkspace(ctx, g.profile, ref.Host)
@@ -81,5 +85,5 @@ func runThread(cmd *cobra.Command, args []string, g *globalFlags, download bool)
 		return err
 	}
 
-	return writeMessages(cmd, g.format, messages, resolver.resolve, "", "")
+	return writeMessages(cmd, outFormat, messages, resolver.resolve, "", "")
 }

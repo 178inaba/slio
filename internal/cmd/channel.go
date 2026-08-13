@@ -20,14 +20,22 @@ func newChannelCmd(g *globalFlags) *cobra.Command {
 }
 
 func newChannelListCmd(g *globalFlags) *cobra.Command {
-	return &cobra.Command{
+	var outFormat string
+
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List channels visible to the user",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runChannelList(cmd, g)
+			return runChannelList(cmd, g, outFormat)
 		},
 	}
+	// `channel` itself emits nothing, so --format goes on the subcommand
+	// that does. Local flags are not inherited, so registering it on the
+	// group would leave `channel list --format` unknown.
+	addFormatFlag(cmd, &outFormat)
+
+	return cmd
 }
 
 type jsonChannel struct {
@@ -35,8 +43,8 @@ type jsonChannel struct {
 	Name string `json:"name"`
 }
 
-func runChannelList(cmd *cobra.Command, g *globalFlags) error {
-	ctx, cancel := commandContext(g.timeoutSeconds)
+func runChannelList(cmd *cobra.Command, g *globalFlags, outFormat string) error {
+	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
 	creds, _, cacheKey, err := resolveWorkspace(ctx, g.profile, "")
@@ -59,7 +67,7 @@ func runChannelList(cmd *cobra.Command, g *globalFlags) error {
 	}
 
 	out := cmd.OutOrStdout()
-	if g.format == "json" {
+	if outFormat == "json" {
 		list := make([]jsonChannel, len(channels))
 		for i, c := range channels {
 			list[i] = jsonChannel{ID: c.ID, Name: c.Name}

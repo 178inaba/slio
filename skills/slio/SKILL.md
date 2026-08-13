@@ -25,4 +25,9 @@ description: Read Slack threads, channel history, and search results directly fr
 - **Output streams**: stdout carries only the data (Markdown, JSON, listings); prompts and status messages go to stderr — read stderr when a command fails.
 - **First-time setup**: if a command fails because no profile is registered, tell the user to run `slio auth login` (they'll need a Slack user token — see the repo README for how to get one).
 
+## Timeouts and exit codes
+
+- Every invocation has a 90 s deadline, which suits an ordinary thread or search. Exit code `124` means that deadline expired: re-run with a longer `--timeout`, given as a Go duration (e.g. `5m`). `--timeout 0` disables it, and is for cases where you already know the fetch is large.
+- Any other failure exits `1`. Read stderr before acting: a bad URL or an unknown channel means fix the argument; an auth or configuration error means the user has to run `slio auth login` or pick a profile. Neither is solved by retrying with a longer timeout.
+
 Run `slio --help` or `slio <command> --help` for the full flag reference; it's the source of truth for exact flags and defaults, so this document doesn't duplicate it.
