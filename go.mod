@@ -1,6 +1,6 @@
 module github.com/178inaba/slio
 
-go 1.26.4
+go 1.26
 
 require (
 	github.com/slack-go/slack v0.27.0
