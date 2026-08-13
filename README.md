@@ -47,6 +47,9 @@ slio search 'in:#general from:@alice deploy'
 # List channels visible to the token
 slio channel list
 
+# Every invocation has a 90s deadline; raise it for a large fetch
+slio history '#general' --limit 1000 --timeout 5m
+
 # Manage workspace profiles
 slio profile list
 slio profile use otherworkspace
@@ -69,6 +72,18 @@ Commands that take a URL (`slio thread`, and `slio history` when given a URL) pi
 Commands write machine-readable output — Markdown, JSON, and the profile and channel listings — to stdout. Prompts, confirmations, and status messages go to stderr, so `slio ... | jq` and `slio ... > thread.md` stay clean.
 
 `slio auth login` is interactive: it masks the token as you paste it and needs a terminal, so it refuses a piped stdin. Use `SLIO_TOKEN` in non-interactive environments.
+
+### Timeouts and exit codes
+
+`--timeout` sets an overall deadline for the invocation and takes a Go duration (`90s`, `5m`), defaulting to 90 seconds. `--timeout 0` disables the deadline. Ctrl-C and `SIGTERM` cancel the in-flight request rather than leaving it to run to completion.
+
+Failures print once to stderr as `Error: ...`, and the exit code says which kind it was:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success |
+| `124` | The `--timeout` deadline expired — re-run with a longer one (the code follows the GNU `timeout` convention) |
+| `1` | Everything else, including an interrupt |
 
 ## Agent Skill
 
