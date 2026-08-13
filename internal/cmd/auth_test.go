@@ -30,16 +30,17 @@ func stubSlackClientFactory(t *testing.T, srv *httptest.Server) {
 	t.Cleanup(func() { slackClientFactory = orig })
 }
 
-// runAuthLoginForTest drives runAuthLogin with scripted stdin and returns
+// runAuthLoginForTest drives `auth login` with scripted stdin and returns
 // what it wrote to stderr. stdout is asserted empty for every caller: the
 // command is interactive only, so nothing it prints belongs on the stream
 // that carries machine-readable output.
 func runAuthLoginForTest(t *testing.T, stdin string) (string, error) {
 	t.Helper()
-	testCmd, out, errOut := newTestCmd(t)
-	testCmd.SetIn(strings.NewReader(stdin))
+	root, out, errOut := newTestRoot(t)
+	root.SetIn(strings.NewReader(stdin))
+	root.SetArgs([]string{"auth", "login"})
 
-	err := runAuthLogin(testCmd, nil)
+	err := root.Execute()
 	if out.Len() > 0 {
 		t.Errorf("stdout = %q, want empty", out.String())
 	}
@@ -53,7 +54,7 @@ func TestAuthLoginRegistersNewProfile(t *testing.T) {
 
 	stderr, err := runAuthLoginForTest(t, "xoxp-abc\n\n")
 	if err != nil {
-		t.Fatalf("runAuthLogin() error = %v, stderr = %s", err, stderr)
+		t.Fatalf("runAuthLoginForTest() error = %v, stderr = %s", err, stderr)
 	}
 
 	for _, want := range []string{
@@ -89,7 +90,7 @@ func TestAuthLoginCustomProfileName(t *testing.T) {
 	stubSlackClientFactory(t, srv)
 
 	if _, err := runAuthLoginForTest(t, "xoxp-abc\ncustomname\n"); err != nil {
-		t.Fatalf("runAuthLogin() error = %v", err)
+		t.Fatalf("runAuthLoginForTest() error = %v", err)
 	}
 
 	f, err := config.Load()
@@ -114,7 +115,7 @@ func TestAuthLoginRejectsNonUserToken(t *testing.T) {
 
 	_, err := runAuthLoginForTest(t, "xoxb-bot-token\n")
 	if err == nil {
-		t.Fatal("runAuthLogin() error = nil, want error")
+		t.Fatal("runAuthLoginForTest() error = nil, want error")
 	}
 	if !strings.Contains(err.Error(), "xoxp-") {
 		t.Errorf("error = %v, want mention of xoxp- prefix", err)
@@ -155,12 +156,13 @@ func TestAuthLoginRejectsNonTTYStdin(t *testing.T) {
 	}
 	t.Cleanup(func() { slackClientFactory = defaultSlackClientFactory })
 
-	testCmd, _, _ := newTestCmd(t)
-	testCmd.SetIn(r)
+	root, _, _ := newTestRoot(t)
+	root.SetIn(r)
+	root.SetArgs([]string{"auth", "login"})
 
-	err = runAuthLogin(testCmd, nil)
+	err = root.Execute()
 	if err == nil {
-		t.Fatal("runAuthLogin() error = nil, want error")
+		t.Fatal("Execute() error = nil, want error")
 	}
 	if !strings.Contains(err.Error(), "SLIO_TOKEN") {
 		t.Errorf("error = %v, want it to point at SLIO_TOKEN", err)
@@ -185,7 +187,7 @@ func TestAuthLoginAuthTestFailureDoesNotSave(t *testing.T) {
 
 	_, err := runAuthLoginForTest(t, "xoxp-bad\n")
 	if err == nil {
-		t.Fatal("runAuthLogin() error = nil, want error")
+		t.Fatal("runAuthLoginForTest() error = nil, want error")
 	}
 
 	f, err := config.Load()
@@ -214,7 +216,7 @@ func TestAuthLoginReRegisterSameWorkspaceConfirmed(t *testing.T) {
 
 	stderr, err := runAuthLoginForTest(t, "xoxp-new\ny\n")
 	if err != nil {
-		t.Fatalf("runAuthLogin() error = %v, stderr = %s", err, stderr)
+		t.Fatalf("runAuthLoginForTest() error = %v, stderr = %s", err, stderr)
 	}
 	if !strings.Contains(stderr, "Overwrite the stored token?") {
 		t.Errorf("stderr = %q, want the overwrite confirmation prompt", stderr)
@@ -250,7 +252,7 @@ func TestAuthLoginReRegisterSameWorkspaceDeclined(t *testing.T) {
 
 	stderr, err := runAuthLoginForTest(t, "xoxp-new\nn\n")
 	if err != nil {
-		t.Fatalf("runAuthLogin() error = %v, stderr = %s", err, stderr)
+		t.Fatalf("runAuthLoginForTest() error = %v, stderr = %s", err, stderr)
 	}
 	if !strings.Contains(stderr, "Aborted") {
 		t.Errorf("stderr = %q, want mention of Aborted", stderr)

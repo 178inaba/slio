@@ -1,15 +1,12 @@
 package cmd
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
-
-	"github.com/spf13/cobra"
 )
 
 func TestRunSearchPassesQueryThroughUnchanged(t *testing.T) {
@@ -30,13 +27,11 @@ func TestRunSearchPassesQueryThroughUnchanged(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	testCmd := &cobra.Command{}
-	var out bytes.Buffer
-	testCmd.SetOut(&out)
-
+	root, out, _ := newTestRoot(t)
 	query := "in:#general from:@someone hello"
-	if err := runSearch(testCmd, []string{query}); err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+	root.SetArgs([]string{"search", query})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	unescaped, err := url.QueryUnescape(gotQuery)
@@ -65,15 +60,10 @@ func TestRunSearchTrailingMoreResultsNotice(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	searchLimitFlag = 1
-	t.Cleanup(func() { searchLimitFlag = defaultSearchLimit })
-
-	testCmd := &cobra.Command{}
-	var out bytes.Buffer
-	testCmd.SetOut(&out)
-
-	if err := runSearch(testCmd, []string{"hello"}); err != nil {
-		t.Fatalf("runSearch() error = %v", err)
+	root, out, _ := newTestRoot(t)
+	root.SetArgs([]string{"search", "hello", "--limit", "1"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	got := out.String()

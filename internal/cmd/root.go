@@ -13,48 +13,61 @@ import (
 
 const defaultTimeoutSeconds = 90
 
-var (
-	profileFlag        string
-	formatFlag         string
-	timeoutSecondsFlag int
-)
+// globalFlags carries the root persistent flag values into each command's
+// RunE. newRootCmd binds them and hands the same pointer to every
+// constructor that needs them, so no command or flag state lives at package
+// level. The values are only final after flag parsing, so a RunE closure
+// must read the fields when it runs rather than copy them at construction.
+type globalFlags struct {
+	profile        string
+	format         string
+	timeoutSeconds int
+}
 
-var rootCmd = &cobra.Command{
-	Use:   "slio",
-	Short: "Read-only Slack CLI for AI coding agents",
-	Long: `slio fetches Slack threads, channel history, and search results as
+func newRootCmd() *cobra.Command {
+	var g globalFlags
+
+	cmd := &cobra.Command{
+		Use:   "slio",
+		Short: "Read-only Slack CLI for AI coding agents",
+		Long: `slio fetches Slack threads, channel history, and search results as
 AI-readable Markdown (or JSON), so an AI coding agent can read Slack
 discussions directly instead of relying on pasted screenshots.`,
-	SilenceUsage:      true,
-	PersistentPreRunE: validateFormatFlag,
-}
+		SilenceUsage: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			return validateFormat(g.format)
+		},
+	}
 
-func init() {
-	rootCmd.PersistentFlags().StringVar(&profileFlag, "profile", "",
+	cmd.PersistentFlags().StringVar(&g.profile, "profile", "",
 		"profile to use, overriding URL-based auto-selection and SLIO_PROFILE")
-	rootCmd.PersistentFlags().StringVar(&formatFlag, "format", "md",
+	cmd.PersistentFlags().StringVar(&g.format, "format", "md",
 		`output format: "md" or "json"`)
-	rootCmd.PersistentFlags().IntVar(&timeoutSecondsFlag, "timeout", defaultTimeoutSeconds,
+	cmd.PersistentFlags().IntVar(&g.timeoutSeconds, "timeout", defaultTimeoutSeconds,
 		"overall deadline in seconds for the invocation (0 = no timeout)")
 
-	rootCmd.AddCommand(threadCmd)
-	rootCmd.AddCommand(historyCmd)
-	rootCmd.AddCommand(searchCmd)
-	rootCmd.AddCommand(channelCmd)
-	rootCmd.AddCommand(authCmd)
-	rootCmd.AddCommand(profileCmd)
+	cmd.AddCommand(
+		newThreadCmd(&g),
+		newHistoryCmd(&g),
+		newSearchCmd(&g),
+		newChannelCmd(&g),
+		newAuthCmd(&g),
+		newProfileCmd(),
+	)
+
+	return cmd
 }
 
-func validateFormatFlag(cmd *cobra.Command, args []string) error {
-	if formatFlag != "md" && formatFlag != "json" {
-		return fmt.Errorf(`invalid --format %q: must be "md" or "json"`, formatFlag)
+func validateFormat(format string) error {
+	if format != "md" && format != "json" {
+		return fmt.Errorf(`invalid --format %q: must be "md" or "json"`, format)
 	}
 	return nil
 }
 
 // Execute runs the root command.
 func Execute() error {
-	return rootCmd.Execute()
+	return newRootCmd().Execute()
 }
 
 // terminalFile reports the underlying *os.File of a command input stream
@@ -71,9 +84,9 @@ func terminalFile(in io.Reader) (*os.File, bool) {
 // commandContext returns a context bound to --timeout. A zero timeout means
 // no deadline: context.WithTimeout(ctx, 0) would expire immediately, so that
 // case skips WithTimeout entirely.
-func commandContext() (context.Context, context.CancelFunc) {
-	if timeoutSecondsFlag <= 0 {
+func commandContext(timeoutSeconds int) (context.Context, context.CancelFunc) {
+	if timeoutSeconds <= 0 {
 		return context.Background(), func() {}
 	}
-	return context.WithTimeout(context.Background(), time.Duration(timeoutSecondsFlag)*time.Second)
+	return context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
 }

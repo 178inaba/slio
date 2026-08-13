@@ -18,7 +18,7 @@ func TestResolveWorkspaceViaSlioToken(t *testing.T) {
 	srv := newAuthTestServer(t, "myws.slack.com", "T1")
 	stubSlackClientFactory(t, srv)
 
-	creds, host, cacheKey, err := resolveWorkspace(context.Background(), "")
+	creds, host, cacheKey, err := resolveWorkspace(context.Background(), "", "")
 	if err != nil {
 		t.Fatalf("resolveWorkspace() error = %v", err)
 	}
@@ -44,7 +44,7 @@ func TestResolveWorkspaceViaProfileDoesNotCallAuthTest(t *testing.T) {
 		return nil
 	}
 
-	_, host, cacheKey, err := resolveWorkspace(context.Background(), "")
+	_, host, cacheKey, err := resolveWorkspace(context.Background(), "", "")
 	if err != nil {
 		t.Fatalf("resolveWorkspace() error = %v", err)
 	}
@@ -70,9 +70,10 @@ func TestRunHistoryViaSlioTokenIncludesThreadPermalink(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	testCmd, out, _ := newTestCmd(t)
-	if err := runHistory(testCmd, []string{"C1"}); err != nil {
-		t.Fatalf("runHistory() error = %v", err)
+	root, out, _ := newTestRoot(t)
+	root.SetArgs([]string{"history", "C1"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	got := out.String()

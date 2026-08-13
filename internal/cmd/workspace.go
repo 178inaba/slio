@@ -16,14 +16,15 @@ import (
 // SLIO_TOKEN bypassed profile resolution, calls auth.test once to learn
 // the workspace host (for permalinks) and a cache key derived from its
 // team ID (since no profile name is available to key the cache by).
-// urlHost is the host parsed from the command's URL argument, or "" for
-// commands that don't take one (search, channel list).
-func resolveWorkspace(ctx context.Context, urlHost string) (creds config.Credentials, host, cacheKey string, err error) {
+// profile is the --profile flag value, and urlHost is the host parsed from
+// the command's URL argument, or "" for commands that don't take one
+// (search, channel list).
+func resolveWorkspace(ctx context.Context, profile, urlHost string) (creds config.Credentials, host, cacheKey string, err error) {
 	file, err := config.Load()
 	if err != nil {
 		return config.Credentials{}, "", "", err
 	}
-	creds, err = config.Resolve(file, profileFlag, urlHost, os.Getenv)
+	creds, err = config.Resolve(file, profile, urlHost, os.Getenv)
 	if err != nil {
 		return config.Credentials{}, "", "", err
 	}
@@ -53,10 +54,12 @@ type jsonMessagesEnvelope struct {
 // results"). In JSON mode there's no leading/trailing distinction (object
 // field order doesn't matter to a consumer), so both collapse into a
 // single "notice" field so the output stays valid, parseable JSON.
-func writeMessages(cmd *cobra.Command, messages []format.Message, resolve format.Resolver, leadingNotice, trailingNotice string) error {
+// outputFormat is the --format flag value; it can't be named format here
+// because that would shadow the format package.
+func writeMessages(cmd *cobra.Command, outputFormat string, messages []format.Message, resolve format.Resolver, leadingNotice, trailingNotice string) error {
 	out := cmd.OutOrStdout()
 
-	if formatFlag == "json" {
+	if outputFormat == "json" {
 		data, err := format.RenderJSON(messages, resolve)
 		if err != nil {
 			return err

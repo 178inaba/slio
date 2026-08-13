@@ -1,15 +1,12 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/spf13/cobra"
 )
 
 func TestRunHistoryByChannelIDOldestToNewestOrder(t *testing.T) {
@@ -27,12 +24,10 @@ func TestRunHistoryByChannelIDOldestToNewestOrder(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	testCmd := &cobra.Command{}
-	var out bytes.Buffer
-	testCmd.SetOut(&out)
-
-	if err := runHistory(testCmd, []string{"C1"}); err != nil {
-		t.Fatalf("runHistory() error = %v", err)
+	root, out, _ := newTestRoot(t)
+	root.SetArgs([]string{"history", "C1"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	got := out.String()
@@ -63,15 +58,10 @@ func TestRunHistoryTruncationNoticeLeadsOutput(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	historyLimitFlag = 2
-	t.Cleanup(func() { historyLimitFlag = defaultHistoryLimit })
-
-	testCmd := &cobra.Command{}
-	var out bytes.Buffer
-	testCmd.SetOut(&out)
-
-	if err := runHistory(testCmd, []string{"C1"}); err != nil {
-		t.Fatalf("runHistory() error = %v", err)
+	root, out, _ := newTestRoot(t)
+	root.SetArgs([]string{"history", "C1", "--limit", "2"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	got := out.String()
@@ -102,11 +92,10 @@ func TestRunHistoryByNameResolvesViaCache(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	testCmd := &cobra.Command{}
-	testCmd.SetOut(&bytes.Buffer{})
-
-	if err := runHistory(testCmd, []string{"#general"}); err != nil {
-		t.Fatalf("runHistory() error = %v", err)
+	root, _, _ := newTestRoot(t)
+	root.SetArgs([]string{"history", "#general"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 	if historyChannelParam != "C42" {
 		t.Errorf("history channel param = %q, want C42 (resolved from #general)", historyChannelParam)
@@ -125,12 +114,10 @@ func TestRunHistoryUnknownChannelName(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	testCmd := &cobra.Command{}
-	testCmd.SetOut(&bytes.Buffer{})
-
-	err := runHistory(testCmd, []string{"#nope"})
-	if err == nil {
-		t.Fatal("runHistory() error = nil, want error for unknown channel name")
+	root, _, _ := newTestRoot(t)
+	root.SetArgs([]string{"history", "#nope"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("Execute() error = nil, want error for unknown channel name")
 	}
 }
 
@@ -149,17 +136,10 @@ func TestRunHistoryJSONFormatIsValidWithNotice(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	historyLimitFlag = 1
-	t.Cleanup(func() { historyLimitFlag = defaultHistoryLimit })
-	formatFlag = "json"
-	t.Cleanup(func() { formatFlag = "md" })
-
-	testCmd := &cobra.Command{}
-	var out bytes.Buffer
-	testCmd.SetOut(&out)
-
-	if err := runHistory(testCmd, []string{"C1"}); err != nil {
-		t.Fatalf("runHistory() error = %v", err)
+	root, out, _ := newTestRoot(t)
+	root.SetArgs([]string{"history", "C1", "--limit", "1", "--format", "json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	var envelope struct {

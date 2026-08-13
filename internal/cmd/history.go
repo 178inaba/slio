@@ -15,38 +15,41 @@ import (
 
 const defaultHistoryLimit = 50
 
-var (
-	historyLimitFlag int
-	historySinceFlag string
-	historyUntilFlag string
-)
+func newHistoryCmd(g *globalFlags) *cobra.Command {
+	var (
+		limit int
+		since string
+		until string
+	)
 
-var historyCmd = &cobra.Command{
-	Use:   "history <channel>",
-	Short: "Fetch recent channel history",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runHistory,
-}
-
-func init() {
-	historyCmd.Flags().IntVar(&historyLimitFlag, "limit", defaultHistoryLimit,
+	cmd := &cobra.Command{
+		Use:   "history <channel>",
+		Short: "Fetch recent channel history",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runHistory(cmd, args, g, limit, since, until)
+		},
+	}
+	cmd.Flags().IntVar(&limit, "limit", defaultHistoryLimit,
 		"maximum number of messages to fetch")
-	historyCmd.Flags().StringVar(&historySinceFlag, "since", "",
+	cmd.Flags().StringVar(&since, "since", "",
 		"only messages after this time (ISO 8601 or relative, e.g. 24h)")
-	historyCmd.Flags().StringVar(&historyUntilFlag, "until", "",
+	cmd.Flags().StringVar(&until, "until", "",
 		"only messages before this time (ISO 8601 or relative, e.g. 24h)")
+
+	return cmd
 }
 
-func runHistory(cmd *cobra.Command, args []string) error {
+func runHistory(cmd *cobra.Command, args []string, g *globalFlags, limit int, since, until string) error {
 	chArg, err := parse.ParseChannelArg(args[0])
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel := commandContext()
+	ctx, cancel := commandContext(g.timeoutSeconds)
 	defer cancel()
 
-	creds, host, cacheKey, err := resolveWorkspace(ctx, chArg.Host)
+	creds, host, cacheKey, err := resolveWorkspace(ctx, g.profile, chArg.Host)
 	if err != nil {
 		return err
 	}
@@ -67,17 +70,17 @@ func runHistory(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	rangeSet := historySinceFlag != "" || historyUntilFlag != ""
-	oldestTs, err := parseTimeFlag("--since", historySinceFlag, now)
+	rangeSet := since != "" || until != ""
+	oldestTs, err := parseTimeFlag("--since", since, now)
 	if err != nil {
 		return err
 	}
-	latestTs, err := parseTimeFlag("--until", historyUntilFlag, now)
+	latestTs, err := parseTimeFlag("--until", until, now)
 	if err != nil {
 		return err
 	}
 
-	msgs, hasMore, err := client.ConversationHistory(ctx, channelID, oldestTs, latestTs, historyLimitFlag)
+	msgs, hasMore, err := client.ConversationHistory(ctx, channelID, oldestTs, latestTs, limit)
 	if err != nil {
 		return err
 	}
@@ -108,7 +111,7 @@ func runHistory(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	return writeMessages(cmd, messages, resolver.resolve, notice, "")
+	return writeMessages(cmd, g.format, messages, resolver.resolve, notice, "")
 }
 
 // parseTimeFlag parses a --since/--until value into a Slack ts bound, or

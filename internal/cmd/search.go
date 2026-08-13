@@ -11,27 +11,30 @@ import (
 
 const defaultSearchLimit = 20
 
-var searchLimitFlag int
+func newSearchCmd(g *globalFlags) *cobra.Command {
+	var limit int
 
-var searchCmd = &cobra.Command{
-	Use:   "search <query>",
-	Short: "Search messages (Slack search syntax pass-through)",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runSearch,
-}
-
-func init() {
-	searchCmd.Flags().IntVar(&searchLimitFlag, "limit", defaultSearchLimit,
+	cmd := &cobra.Command{
+		Use:   "search <query>",
+		Short: "Search messages (Slack search syntax pass-through)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSearch(cmd, args, g, limit)
+		},
+	}
+	cmd.Flags().IntVar(&limit, "limit", defaultSearchLimit,
 		"maximum number of results to fetch")
+
+	return cmd
 }
 
-func runSearch(cmd *cobra.Command, args []string) error {
+func runSearch(cmd *cobra.Command, args []string, g *globalFlags, limit int) error {
 	query := args[0]
 
-	ctx, cancel := commandContext()
+	ctx, cancel := commandContext(g.timeoutSeconds)
 	defer cancel()
 
-	creds, _, cacheKey, err := resolveWorkspace(ctx, "")
+	creds, _, cacheKey, err := resolveWorkspace(ctx, g.profile, "")
 	if err != nil {
 		return err
 	}
@@ -42,7 +45,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	matches, total, err := client.SearchMessages(ctx, query, searchLimitFlag)
+	matches, total, err := client.SearchMessages(ctx, query, limit)
 	if err != nil {
 		return err
 	}
@@ -65,5 +68,5 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		notice = fmt.Sprintf("%d more results", more)
 	}
 
-	return writeMessages(cmd, messages, resolver.resolve, "", notice)
+	return writeMessages(cmd, g.format, messages, resolver.resolve, "", notice)
 }

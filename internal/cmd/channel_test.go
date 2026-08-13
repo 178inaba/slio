@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,7 +10,6 @@ import (
 	"time"
 
 	"github.com/178inaba/slio/internal/cache"
-	"github.com/spf13/cobra"
 )
 
 func TestRunChannelListMarkdown(t *testing.T) {
@@ -26,12 +24,10 @@ func TestRunChannelListMarkdown(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	testCmd := &cobra.Command{}
-	var out bytes.Buffer
-	testCmd.SetOut(&out)
-
-	if err := runChannelList(testCmd, nil); err != nil {
-		t.Fatalf("runChannelList() error = %v", err)
+	root, out, _ := newTestRoot(t)
+	root.SetArgs([]string{"channel", "list"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	got := out.String()
@@ -52,15 +48,10 @@ func TestRunChannelListJSON(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	formatFlag = "json"
-	t.Cleanup(func() { formatFlag = "md" })
-
-	testCmd := &cobra.Command{}
-	var out bytes.Buffer
-	testCmd.SetOut(&out)
-
-	if err := runChannelList(testCmd, nil); err != nil {
-		t.Fatalf("runChannelList() error = %v", err)
+	root, out, _ := newTestRoot(t)
+	root.SetArgs([]string{"channel", "list", "--format", "json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	var channels []jsonChannel
@@ -84,10 +75,10 @@ func TestRunChannelListPopulatesCacheForNameResolution(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	testCmd := &cobra.Command{}
-	testCmd.SetOut(&bytes.Buffer{})
-	if err := runChannelList(testCmd, nil); err != nil {
-		t.Fatalf("runChannelList() error = %v", err)
+	root, _, _ := newTestRoot(t)
+	root.SetArgs([]string{"channel", "list"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	store, err := cache.Open("myws")
