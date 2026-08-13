@@ -17,9 +17,10 @@ const defaultHistoryLimit = 50
 
 func newHistoryCmd(g *globalFlags) *cobra.Command {
 	var (
-		limit int
-		since string
-		until string
+		limit     int
+		since     string
+		until     string
+		outFormat string
 	)
 
 	cmd := &cobra.Command{
@@ -27,7 +28,7 @@ func newHistoryCmd(g *globalFlags) *cobra.Command {
 		Short: "Fetch recent channel history",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runHistory(cmd, args, g, limit, since, until)
+			return runHistory(cmd, args, g, limit, since, until, outFormat)
 		},
 	}
 	cmd.Flags().IntVar(&limit, "limit", defaultHistoryLimit,
@@ -36,11 +37,12 @@ func newHistoryCmd(g *globalFlags) *cobra.Command {
 		"only messages after this time (ISO 8601 or relative, e.g. 24h)")
 	cmd.Flags().StringVar(&until, "until", "",
 		"only messages before this time (ISO 8601 or relative, e.g. 24h)")
+	addFormatFlag(cmd, &outFormat)
 
 	return cmd
 }
 
-func runHistory(cmd *cobra.Command, args []string, g *globalFlags, limit int, since, until string) error {
+func runHistory(cmd *cobra.Command, args []string, g *globalFlags, limit int, since, until, outFormat string) error {
 	chArg, err := parse.ParseChannelArg(args[0])
 	if err != nil {
 		return err
@@ -111,7 +113,7 @@ func runHistory(cmd *cobra.Command, args []string, g *globalFlags, limit int, si
 		}
 	}
 
-	return writeMessages(cmd, g.format, messages, resolver.resolve, notice, "")
+	return writeMessages(cmd, outFormat, messages, resolver.resolve, notice, "")
 }
 
 // parseTimeFlag parses a --since/--until value into a Slack ts bound, or

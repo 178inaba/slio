@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -12,9 +13,9 @@ import (
 )
 
 // TestInvalidFormatIsRejected covers the wiring of the --format validation:
-// it runs as the root's PersistentPreRunE, so a subcommand must reject a bad
-// value before doing any work. A command that reaches the API would fail the
-// test by connecting to the real Slack endpoint.
+// it runs as the command's PreRunE, so a command must reject a bad value
+// before doing any work. A command that reaches the API would fail the test
+// by connecting to the real Slack endpoint.
 func TestInvalidFormatIsRejected(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
@@ -24,6 +25,59 @@ func TestInvalidFormatIsRejected(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid --format") {
 		t.Errorf("error = %v, want it to report an invalid --format", err)
+	}
+}
+
+// TestFormatFlagRegistration pins down which commands take --format: it is
+// registered per command so the ones with no output to format reject it
+// rather than silently ignoring it. `channel` is such a command — only its
+// `list` subcommand emits anything.
+func TestFormatFlagRegistration(t *testing.T) {
+	want := map[string]bool{
+		"slio thread":       true,
+		"slio history":      true,
+		"slio search":       true,
+		"slio channel list": true,
+		"slio channel":      false,
+		"slio auth":         false,
+		"slio auth login":   false,
+		"slio profile":      false,
+		"slio profile list": false,
+		"slio profile use":  false,
+	}
+
+	// Walking the tree as built, rather than after a run: cobra adds its
+	// own `help` and `completion` commands while executing.
+	got := make(map[string]bool, len(want))
+	var walk func(cmd *cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		got[cmd.CommandPath()] = cmd.Flags().Lookup("format") != nil
+		for _, sub := range cmd.Commands() {
+			walk(sub)
+		}
+	}
+	for _, cmd := range newRootCmd(&globalFlags{}).Commands() {
+		walk(cmd)
+	}
+
+	if !maps.Equal(got, want) {
+		t.Errorf("commands with --format = %v, want %v", got, want)
+	}
+}
+
+// TestFormatFlagIsUnknownWhereItDoesNothing is the user-visible half of
+// TestFormatFlagRegistration: the flag is not merely ignored on `auth
+// login`, it fails the invocation. Parsing fails before the command prompts
+// for anything, so no stdin is needed.
+func TestFormatFlagIsUnknownWhereItDoesNothing(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	_, _, err := runSlio(t, "auth", "login", "--format", "json")
+	if err == nil {
+		t.Fatal("slio auth login --format json: error = nil, want an unknown flag error")
+	}
+	if !strings.Contains(err.Error(), "unknown flag: --format") {
+		t.Errorf("error = %v, want it to report an unknown --format flag", err)
 	}
 }
 

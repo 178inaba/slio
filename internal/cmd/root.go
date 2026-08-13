@@ -26,7 +26,6 @@ const timeoutExitCode = 124
 // must read the fields when it runs rather than copy them at construction.
 type globalFlags struct {
 	profile string
-	format  string
 	timeout time.Duration
 }
 
@@ -42,15 +41,10 @@ discussions directly instead of relying on pasted screenshots.`,
 		// is noise for the primary (agent) consumer.
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			return validateFormat(g.format)
-		},
 	}
 
 	cmd.PersistentFlags().StringVar(&g.profile, "profile", "",
 		"profile to use, overriding URL-based auto-selection and SLIO_PROFILE")
-	cmd.PersistentFlags().StringVar(&g.format, "format", "md",
-		`output format: "md" or "json"`)
 	cmd.PersistentFlags().DurationVar(&g.timeout, "timeout", defaultTimeout,
 		"overall deadline for the invocation, as a Go duration (0 = no deadline)")
 
@@ -66,6 +60,23 @@ discussions directly instead of relying on pasted screenshots.`,
 	)
 
 	return cmd
+}
+
+// addFormatFlag registers --format on a single command, along with the check
+// that rejects an unknown value. It is registered per command rather than on
+// the root so it never appears on `auth` and `profile`, which would silently
+// ignore it; pairing the two here means a command cannot take the flag
+// without also validating it.
+//
+// The check hangs off PreRunE rather than starting RunE because cobra
+// validates required flags in between, and an unknown format has to be
+// reported ahead of a missing flag. That also means this owns cmd.PreRunE: a
+// command that later sets its own would drop the check.
+func addFormatFlag(cmd *cobra.Command, outFormat *string) {
+	cmd.Flags().StringVar(outFormat, "format", "md", `output format: "md" or "json"`)
+	cmd.PreRunE = func(*cobra.Command, []string) error {
+		return validateFormat(*outFormat)
+	}
 }
 
 func validateFormat(format string) error {
