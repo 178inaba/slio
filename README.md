@@ -75,7 +75,9 @@ Commands write machine-readable output — Markdown, JSON, and the profile and c
 
 ### Timeouts and exit codes
 
-`--timeout` sets an overall deadline for the invocation and takes a Go duration (`90s`, `5m`), defaulting to 90 seconds. `--timeout 0` disables the deadline. Ctrl-C and `SIGTERM` cancel the in-flight request rather than leaving it to run to completion.
+`--timeout` sets an overall deadline for the invocation and takes a Go duration (`90s`, `5m`), defaulting to 90 seconds. `--timeout 0` disables the deadline. The deadline covers the requests, not the time you spend at a prompt.
+
+Ctrl-C and `SIGTERM` cancel the in-flight request rather than leaving it to run to completion. At an `slio auth login` prompt they end the command straight away, without writing or changing a profile.
 
 Failures print once to stderr as `Error: ...`, and the exit code says which kind it was:
 
