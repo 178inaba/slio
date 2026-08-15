@@ -89,10 +89,18 @@ Failures print once to stderr as `Error: ...`, and the exit code says which kind
 
 ## Agent Skill
 
-This repo ships an [Agent Skill](./skills/slio/SKILL.md) that tells an AI agent when and how to reach for `slio`. Install it by either:
+This repo ships an [Agent Skill](./skills/slio/SKILL.md) that tells an AI agent when and how to reach for `slio`. In Claude Code, install it as a plugin:
 
-- copying `skills/slio/` into your agent's skills directory (e.g. `~/.claude/skills/slio/` for Claude Code), or
-- using a skill installer that consumes GitHub repos directly, e.g. [`npx skills`](https://www.npmjs.com/package/skills).
+```sh
+claude plugin marketplace add 178inaba/slio
+claude plugin install slio@slio
+```
+
+For other agents, use a skill installer that consumes GitHub repos directly, e.g. [`npx skills`](https://www.npmjs.com/package/skills):
+
+```sh
+npx skills add 178inaba/slio
+```
 
 ## Development
 

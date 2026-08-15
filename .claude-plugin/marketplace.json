@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "slio",
+  "description": "Read-only Slack CLI for AI coding agents: fetch threads, channel history, and search results as AI-readable Markdown.",
+  "owner": {
+    "name": "Masahiro Furudate",
+    "url": "https://github.com/178inaba"
+  },
+  "plugins": [
+    {
+      "name": "slio",
+      "source": "./",
+      "description": "Read-only Slack CLI for AI coding agents: fetch threads, channel history, and search results as AI-readable Markdown."
+    }
+  ]
+}
