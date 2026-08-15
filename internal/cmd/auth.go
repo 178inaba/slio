@@ -209,10 +209,19 @@ func readCancellable[T any](ctx context.Context, read func() (T, error)) (T, err
 	}
 }
 
-func readLine(ctx context.Context, r *bufio.Reader) (string, error) {
+// readLine reads one trimmed line. A cancelled read also ends the prompt
+// line: nothing echoes the interrupt itself, so without this the error
+// Execute prints would continue the prompt rather than start its own line.
+func readLine(ctx context.Context, out io.Writer, r *bufio.Reader) (string, error) {
 	line, err := readCancellable(ctx, func() (string, error) {
 		return r.ReadString('\n')
 	})
+	if errors.Is(err, errPromptCancelled) {
+		if _, err := fmt.Fprintln(out); err != nil {
+			return "", err
+		}
+		return "", errPromptCancelled
+	}
 	if err != nil && line == "" {
 		return "", err
 	}
@@ -224,7 +233,7 @@ func promptLine(ctx context.Context, out io.Writer, in *bufio.Reader, prompt str
 	if _, err := fmt.Fprint(out, prompt); err != nil {
 		return "", err
 	}
-	return readLine(ctx, in)
+	return readLine(ctx, out, in)
 }
 
 // promptToken reads the token without echoing it. A non-nil stdinFile is
@@ -235,7 +244,7 @@ func promptToken(ctx context.Context, out io.Writer, in *bufio.Reader, stdinFile
 		return "", err
 	}
 	if stdinFile == nil {
-		return readLine(ctx, in)
+		return readLine(ctx, out, in)
 	}
 
 	// ReadPassword clears ECHO and restores the terminal from its own
@@ -256,6 +265,12 @@ func promptToken(ctx context.Context, out io.Writer, in *bufio.Reader, stdinFile
 			if err := term.Restore(fd, state); err != nil {
 				return "", err
 			}
+			// Ctrl-C is not echoed with ECHO cleared, so end the prompt
+			// line here as readLine does on the same path.
+			if _, err := fmt.Fprintln(out); err != nil {
+				return "", err
+			}
+			return "", errPromptCancelled
 		}
 		return "", err
 	}

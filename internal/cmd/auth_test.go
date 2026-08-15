@@ -487,6 +487,11 @@ func TestAuthLoginInterruptedAtPromptSavesNothing(t *testing.T) {
 			if called.Load() != tt.wantAPICall {
 				t.Errorf("slackClientFactory called = %v, want %v", called.Load(), tt.wantAPICall)
 			}
+			// A cancelled prompt ends its own line, so Execute's error
+			// message starts on a fresh one instead of continuing it.
+			if !strings.HasSuffix(stderr, "\n") {
+				t.Errorf("stderr = %q, want the cancelled prompt to end its line", stderr)
+			}
 			assertConfigUnchanged(t, tt.seed)
 		})
 	}
