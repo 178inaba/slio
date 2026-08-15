@@ -88,6 +88,6 @@ func runChannelList(cmd *cobra.Command, g *globalFlags, outFormat format.Format)
 		}
 		return nil
 	default:
-		return unsupportedFormatError(outFormat)
+		return format.UnsupportedError(outFormat)
 	}
 }

@@ -78,14 +78,6 @@ func addFormatFlag(cmd *cobra.Command, outFormat *format.Format) {
 	cmd.Flags().Var(outFormat, "format", `output format: "md" or "json"`)
 }
 
-// unsupportedFormatError reports a Format that no writer handles.
-// Format.Set rejects an unknown --format during flag parsing, but a Format
-// converted from an arbitrary string bypasses Set, so the writers keep their
-// own guard.
-func unsupportedFormatError(f format.Format) error {
-	return fmt.Errorf("unsupported output format %q", f)
-}
-
 // Execute runs the root command and returns the process exit code. SIGINT
 // and SIGTERM cancel the command context so in-flight requests stop instead
 // of running to completion after the user has given up on them.

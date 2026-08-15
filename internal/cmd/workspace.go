@@ -92,6 +92,6 @@ func writeMessages(cmd *cobra.Command, outputFormat format.Format, messages []fo
 		}
 		return nil
 	default:
-		return unsupportedFormatError(outputFormat)
+		return format.UnsupportedError(outputFormat)
 	}
 }

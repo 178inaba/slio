@@ -34,7 +34,7 @@ func (f *Format) Set(s string) error {
 		*f = v
 		return nil
 	}
-	return fmt.Errorf("invalid --format %q: must be %q or %q", s, Markdown, JSON)
+	return UnsupportedError(Format(s))
 }
 
 // Type names the value shown in the --format help line. It reports "string"
@@ -42,6 +42,14 @@ func (f *Format) Set(s string) error {
 // contract kept in sync across README.md, skills/slio/SKILL.md and the help
 // strings; see CLAUDE.md.
 func (Format) Type() string { return "string" }
+
+// UnsupportedError is shared by Set and by the callers that switch on a
+// Format: a Format converted from an arbitrary string still type-checks, so
+// a switch cannot assume its value went through Set. Keeping one constructor
+// means the accepted values are listed in one place.
+func UnsupportedError(f Format) error {
+	return fmt.Errorf("invalid --format %q: must be %q or %q", f, Markdown, JSON)
+}
 
 // Resolver maps a Slack user ID to its display name, used to expand
 // <@U…> mentions in message text. An empty return means "unknown" and
