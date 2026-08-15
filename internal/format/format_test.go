@@ -297,3 +297,39 @@ func TestParseTsInvalid(t *testing.T) {
 		t.Fatal("ParseTs() error = nil, want error")
 	}
 }
+
+func TestFormatSet(t *testing.T) {
+	for _, name := range []string{"md", "json"} {
+		// Start from a value no case sets, so a Set that assigns nothing
+		// cannot pass by matching the value it started with.
+		f := Format("")
+		if err := f.Set(name); err != nil {
+			t.Errorf("Set(%q) error = %v", name, err)
+		}
+		if f.String() != name {
+			t.Errorf("after Set(%q), String() = %q", name, f.String())
+		}
+	}
+}
+
+// A rejected --format must leave the default intact: pflag keeps the flag
+// value it already holds when Set returns an error.
+func TestFormatSetRejectsUnknown(t *testing.T) {
+	f := Markdown
+	err := f.Set("yaml")
+	if err == nil || !strings.Contains(err.Error(), "yaml") {
+		t.Fatalf("Set(yaml) error = %v, want an invalid-format error naming it", err)
+	}
+	if f != Markdown {
+		t.Errorf("after a rejected Set, Format = %q, want it left at %q", f, Markdown)
+	}
+}
+
+// Type names the value cobra prints in the `--format string` help line, which
+// is part of the agent-facing contract kept in sync across README.md,
+// skills/slio/SKILL.md and the help strings.
+func TestFormatType(t *testing.T) {
+	if got := Format("").Type(); got != "string" {
+		t.Errorf("Type() = %q, want %q", got, "string")
+	}
+}
