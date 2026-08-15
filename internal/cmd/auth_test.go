@@ -34,29 +34,27 @@ func newAuthTestServer(t *testing.T, host, teamID string) *httptest.Server {
 // API.
 func stubSlackClientFactory(t *testing.T, srv *httptest.Server) *atomic.Bool {
 	t.Helper()
-	var called atomic.Bool
-	orig := slackClientFactory
-	slackClientFactory = func(token string) *slackclient.Client {
-		called.Store(true)
-		return slackclient.New(token, slackclient.WithAPIURL(srv.URL+"/"))
-	}
-	t.Cleanup(func() { slackClientFactory = orig })
-	return &called
+	return stubSlackClientFactoryAt(t, srv.URL+"/")
 }
 
 // noSlackClientFactory stubs the factory for runs that must not reach the
 // API at all. It records the call instead of failing on the spot: the
 // command runs in its own goroutine, where t.Fatal would kill the run and
 // surface as runAuthLoginWithContext's timeout rather than as the real
-// cause. The client it hands back points at a dead address so a call fails
-// instead of panicking, leaving the returned flag to report what happened.
+// cause. The dead address means a call that should not have happened fails
+// instead of panicking, leaving the returned flag to report it.
 func noSlackClientFactory(t *testing.T) *atomic.Bool {
+	t.Helper()
+	return stubSlackClientFactoryAt(t, "http://127.0.0.1:0/")
+}
+
+func stubSlackClientFactoryAt(t *testing.T, apiURL string) *atomic.Bool {
 	t.Helper()
 	var called atomic.Bool
 	orig := slackClientFactory
 	slackClientFactory = func(token string) *slackclient.Client {
 		called.Store(true)
-		return slackclient.New(token, slackclient.WithAPIURL("http://127.0.0.1:0/"))
+		return slackclient.New(token, slackclient.WithAPIURL(apiURL))
 	}
 	t.Cleanup(func() { slackClientFactory = orig })
 	return &called
@@ -439,11 +437,15 @@ func TestAuthLoginInterruptedAtPromptSavesNothing(t *testing.T) {
 		name    string
 		seed    *config.File
 		answers []string
+		// wantAPICall is false only where the interrupt has to stop the
+		// command before it verifies the token.
+		wantAPICall bool
 	}{
 		{name: "the token prompt"},
-		{name: "the profile name prompt", answers: []string{"xoxp-abc\n"}},
+		{name: "the profile name prompt", answers: []string{"xoxp-abc\n"}, wantAPICall: true},
 		{
-			name: "the overwrite confirmation for the same workspace",
+			name:        "the overwrite confirmation for the same workspace",
+			wantAPICall: true,
 			seed: &config.File{
 				DefaultProfile: "myws",
 				Profiles: map[string]config.Profile{
@@ -453,7 +455,8 @@ func TestAuthLoginInterruptedAtPromptSavesNothing(t *testing.T) {
 			answers: []string{"xoxp-new\n"},
 		},
 		{
-			name: "the overwrite confirmation for a different workspace",
+			name:        "the overwrite confirmation for a different workspace",
+			wantAPICall: true,
 			seed: &config.File{
 				DefaultProfile: "taken",
 				Profiles: map[string]config.Profile{
@@ -481,8 +484,8 @@ func TestAuthLoginInterruptedAtPromptSavesNothing(t *testing.T) {
 			stderr, exit, err := runAuthLoginWithContext(t, ctx,
 				newInterruptedStdin(t, cancel, tt.answers...))
 			assertInterrupted(t, stderr, exit, err)
-			if len(tt.answers) == 0 && called.Load() {
-				t.Error("slackClientFactory was called; an interrupt at the token prompt must stop before the request")
+			if called.Load() != tt.wantAPICall {
+				t.Errorf("slackClientFactory called = %v, want %v", called.Load(), tt.wantAPICall)
 			}
 			assertConfigUnchanged(t, tt.seed)
 		})
