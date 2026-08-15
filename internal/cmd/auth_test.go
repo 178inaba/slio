@@ -1,13 +1,20 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/signal"
+	"reflect"
+	"slices"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/178inaba/slio/internal/config"
 	"github.com/178inaba/slio/internal/slackclient"
@@ -22,31 +29,173 @@ func newAuthTestServer(t *testing.T, host, teamID string) *httptest.Server {
 	return srv
 }
 
-func stubSlackClientFactory(t *testing.T, srv *httptest.Server) {
+// stubSlackClientFactory points the factory at srv and reports whether it
+// was called, so a test can assert that a run stopped before reaching the
+// API.
+func stubSlackClientFactory(t *testing.T, srv *httptest.Server) *atomic.Bool {
 	t.Helper()
+	var called atomic.Bool
 	orig := slackClientFactory
 	slackClientFactory = func(token string) *slackclient.Client {
+		called.Store(true)
 		return slackclient.New(token, slackclient.WithAPIURL(srv.URL+"/"))
 	}
 	t.Cleanup(func() { slackClientFactory = orig })
+	return &called
 }
 
-// runAuthLoginForTest drives `auth login` with the given stdin and returns
-// what it wrote to stderr. stdout is asserted empty for every caller: the
+// noSlackClientFactory stubs the factory for runs that must not reach the
+// API at all. It records the call instead of failing on the spot: the
+// command runs in its own goroutine, where t.Fatal would kill the run and
+// surface as runAuthLoginWithContext's timeout rather than as the real
+// cause. The client it hands back points at a dead address so a call fails
+// instead of panicking, leaving the returned flag to report what happened.
+func noSlackClientFactory(t *testing.T) *atomic.Bool {
+	t.Helper()
+	var called atomic.Bool
+	orig := slackClientFactory
+	slackClientFactory = func(token string) *slackclient.Client {
+		called.Store(true)
+		return slackclient.New(token, slackclient.WithAPIURL("http://127.0.0.1:0/"))
+	}
+	t.Cleanup(func() { slackClientFactory = orig })
+	return &called
+}
+
+// commandReturnTimeout bounds how long a test waits for `auth login` to
+// return after an interrupt. An interrupted prompt is meant to end the
+// command at once, so this only ever fires on a regression; it is generous
+// so a loaded CI machine does not trip it.
+const commandReturnTimeout = 10 * time.Second
+
+// runAuthLoginWithContext drives `auth login` with the given context and
+// stdin, and reports what Execute would: the stderr text, the exit code,
+// and the described error. stdout is asserted empty for every caller: the
 // command is interactive only, so nothing it prints belongs on the stream
 // that carries machine-readable output. stdin is an io.Reader rather than a
 // string because the non-TTY case needs a real *os.File.
-func runAuthLoginForTest(t *testing.T, stdin io.Reader) (string, error) {
+//
+// The command runs in a goroutine because an interrupted prompt is supposed
+// to return on its own; called directly, a run that does not would hang the
+// whole package until the test binary panics.
+func runAuthLoginWithContext(t *testing.T, ctx context.Context, stdin io.Reader) (stderr string, exit int, err error) {
 	t.Helper()
 	root, out, errOut := newTestRoot(t)
 	root.SetIn(stdin)
 	root.SetArgs([]string{"auth", "login"})
 
-	err := root.Execute()
+	done := make(chan error, 1)
+	go func() { done <- root.ExecuteContext(ctx) }()
+
+	select {
+	case err = <-done:
+	case <-time.After(commandReturnTimeout):
+		t.Fatal("the command did not return after the interrupt")
+	}
+
 	if out.Len() > 0 {
 		t.Errorf("stdout = %q, want empty", out.String())
 	}
-	return errOut.String(), err
+	// Execute describes the error only when there is one; describing a nil
+	// error would turn a successful run into a failure here.
+	if err != nil {
+		err = describeContextError(ctx, err, defaultTimeout)
+	}
+	return errOut.String(), exitCode(ctx, err), err
+}
+
+// runAuthLoginForTest drives `auth login` to completion with the given
+// stdin and returns what it wrote to stderr.
+func runAuthLoginForTest(t *testing.T, stdin io.Reader) (string, error) {
+	t.Helper()
+	stderr, _, err := runAuthLoginWithContext(t, context.Background(), stdin)
+	return stderr, err
+}
+
+// scriptedStdin serves one answer per Read so a test can pick the prompt
+// the user interrupts. interrupt fires as the read at interruptAt is
+// served; when that read has no answer left — the user pressed Ctrl-C
+// instead of typing — the reader then blocks the way a real terminal read
+// does. Go registers its signal handlers with SA_RESTART, so a signal does
+// not make a pending read return; returning io.EOF here would end the
+// prompt on its own and the command would abort with or without the fix
+// under test.
+type scriptedStdin struct {
+	answers     []string // each ends with "\n"
+	interruptAt int
+	interrupt   func()
+	release     <-chan struct{} // closed by the test, releasing a parked read
+
+	reads int
+}
+
+func (s *scriptedStdin) Read(p []byte) (int, error) {
+	read := s.reads
+	s.reads++
+	if read == s.interruptAt {
+		s.interrupt()
+	}
+	if read < len(s.answers) {
+		return copy(p, s.answers[read]), nil
+	}
+	<-s.release
+	return 0, io.EOF
+}
+
+func newScriptedStdin(t *testing.T, interrupt func(), interruptAt int, answers []string) *scriptedStdin {
+	t.Helper()
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	return &scriptedStdin{
+		answers:     answers,
+		interruptAt: interruptAt,
+		interrupt:   interrupt,
+		release:     release,
+	}
+}
+
+// newInterruptedStdin answers the prompts in order and then interrupts at
+// the next one, standing in for a user who presses Ctrl-C instead of typing.
+func newInterruptedStdin(t *testing.T, interrupt func(), answers ...string) *scriptedStdin {
+	t.Helper()
+	return newScriptedStdin(t, interrupt, len(answers), answers)
+}
+
+// newStdinInterruptedWithLastAnswer interrupts as the final answer is
+// served, standing in for a signal that lands in the window between the
+// last prompt and the write.
+func newStdinInterruptedWithLastAnswer(t *testing.T, interrupt func(), answers ...string) *scriptedStdin {
+	t.Helper()
+	return newScriptedStdin(t, interrupt, len(answers)-1, answers)
+}
+
+// assertConfigUnchanged checks that the config file still holds what the
+// test seeded, or was never created when nothing was seeded.
+func assertConfigUnchanged(t *testing.T, seed *config.File) {
+	t.Helper()
+	path, err := config.Path()
+	if err != nil {
+		t.Fatalf("config.Path() error = %v", err)
+	}
+
+	if seed == nil {
+		switch _, err := os.Stat(path); {
+		case err == nil:
+			f, _ := config.Load()
+			t.Errorf("config file exists (profiles = %+v), want it never created", f.Profiles)
+		case !os.IsNotExist(err):
+			t.Fatalf("os.Stat(%s) error = %v", path, err)
+		}
+		return
+	}
+
+	f, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+	if !reflect.DeepEqual(f, seed) {
+		t.Errorf("config = %+v, want it unchanged at %+v", f, seed)
+	}
 }
 
 func TestAuthLoginRegistersNewProfile(t *testing.T) {
@@ -106,14 +255,9 @@ func TestAuthLoginCustomProfileName(t *testing.T) {
 
 func TestAuthLoginRejectsNonUserToken(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	// No server stub: a network call here would fail the test by connecting
-	// to a closed/invalid address, proving the prefix check short-circuits
-	// before any API call.
-	slackClientFactory = func(token string) *slackclient.Client {
-		t.Fatal("slackClientFactory should not be called for a rejected token")
-		return nil
-	}
-	t.Cleanup(func() { slackClientFactory = defaultSlackClientFactory })
+	// No server stub: the prefix check has to short-circuit before any API
+	// call, so the factory must stay untouched.
+	called := noSlackClientFactory(t)
 
 	_, err := runAuthLoginForTest(t, strings.NewReader("xoxb-bot-token\n"))
 	if err == nil {
@@ -121,6 +265,9 @@ func TestAuthLoginRejectsNonUserToken(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "xoxp-") {
 		t.Errorf("error = %v, want mention of xoxp- prefix", err)
+	}
+	if called.Load() {
+		t.Error("slackClientFactory was called for a rejected token")
 	}
 
 	if _, statErr := config.Load(); statErr == nil {
@@ -152,11 +299,7 @@ func TestAuthLoginRejectsNonTTYStdin(t *testing.T) {
 		t.Fatalf("closing the write end of the pipe: %v", err)
 	}
 
-	slackClientFactory = func(token string) *slackclient.Client {
-		t.Fatal("slackClientFactory should not be called without a terminal")
-		return nil
-	}
-	t.Cleanup(func() { slackClientFactory = defaultSlackClientFactory })
+	called := noSlackClientFactory(t)
 
 	_, err = runAuthLoginForTest(t, r)
 	if err == nil {
@@ -164,6 +307,9 @@ func TestAuthLoginRejectsNonTTYStdin(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "SLIO_TOKEN") {
 		t.Errorf("error = %v, want it to point at SLIO_TOKEN", err)
+	}
+	if called.Load() {
+		t.Error("slackClientFactory was called without a terminal")
 	}
 
 	f, loadErr := config.Load()
@@ -262,5 +408,142 @@ func TestAuthLoginReRegisterSameWorkspaceDeclined(t *testing.T) {
 	}
 	if f.Profiles["myws"].Token != "xoxp-old" {
 		t.Errorf("Token = %q, want xoxp-old (unchanged)", f.Profiles["myws"].Token)
+	}
+}
+
+// assertInterrupted checks the outcome every interrupted run shares: the
+// command fails, exits 1, and says it was interrupted without dragging in
+// the token-format complaint that an empty prompt answer used to produce.
+func assertInterrupted(t *testing.T, stderr string, exit int, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("error = nil, want an interruption; stderr = %s", stderr)
+	}
+	if exit != 1 {
+		t.Errorf("exit code = %d, want 1", exit)
+	}
+	if !strings.Contains(err.Error(), "interrupted") {
+		t.Errorf("error = %v, want it to read as an interruption", err)
+	}
+	if strings.Contains(err.Error(), "must start with") {
+		t.Errorf("error = %v, want no token-format complaint", err)
+	}
+}
+
+// TestAuthLoginInterruptedAtPromptSavesNothing covers Ctrl-C at each prompt.
+// The profile name case is the one that used to save the profile and exit 0:
+// auth.test has already succeeded by then, so nothing downstream noticed
+// that the user had given up.
+func TestAuthLoginInterruptedAtPromptSavesNothing(t *testing.T) {
+	tests := []struct {
+		name    string
+		seed    *config.File
+		answers []string
+	}{
+		{name: "the token prompt"},
+		{name: "the profile name prompt", answers: []string{"xoxp-abc\n"}},
+		{
+			name: "the overwrite confirmation for the same workspace",
+			seed: &config.File{
+				DefaultProfile: "myws",
+				Profiles: map[string]config.Profile{
+					"myws": {Token: "xoxp-old", Host: "myws.slack.com", TeamID: "T1"},
+				},
+			},
+			answers: []string{"xoxp-new\n"},
+		},
+		{
+			name: "the overwrite confirmation for a different workspace",
+			seed: &config.File{
+				DefaultProfile: "taken",
+				Profiles: map[string]config.Profile{
+					"taken": {Token: "xoxp-other", Host: "other.slack.com", TeamID: "T2"},
+				},
+			},
+			answers: []string{"xoxp-new\n", "taken\n"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			if tt.seed != nil {
+				if err := tt.seed.Save(); err != nil {
+					t.Fatalf("seed config Save() error = %v", err)
+				}
+			}
+			srv := newAuthTestServer(t, "myws.slack.com", "T1")
+			called := stubSlackClientFactory(t, srv)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			stderr, exit, err := runAuthLoginWithContext(t, ctx,
+				newInterruptedStdin(t, cancel, tt.answers...))
+			assertInterrupted(t, stderr, exit, err)
+			if len(tt.answers) == 0 && called.Load() {
+				t.Error("slackClientFactory was called; an interrupt at the token prompt must stop before the request")
+			}
+			assertConfigUnchanged(t, tt.seed)
+		})
+	}
+}
+
+// TestAuthLoginInterruptedWithFinalAnswerSavesNothing covers a signal that
+// lands in the window between the last prompt and the write. Which side
+// stops the run is not fixed — readLine's select sees the answer and the
+// cancellation ready at once and picks at random — which is why
+// runAuthLogin checks the context again before saving: without that guard,
+// the runs where the read wins would write the profile.
+func TestAuthLoginInterruptedWithFinalAnswerSavesNothing(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	srv := newAuthTestServer(t, "myws.slack.com", "T1")
+	stubSlackClientFactory(t, srv)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stderr, exit, err := runAuthLoginWithContext(t, ctx,
+		newStdinInterruptedWithLastAnswer(t, cancel, "xoxp-abc\n", "myws\n"))
+	assertInterrupted(t, stderr, exit, err)
+	assertConfigUnchanged(t, nil)
+}
+
+// TestAuthLoginSignalAtPromptAborts drives the real signals rather than a
+// bare context cancellation, so SIGTERM is covered alongside SIGINT.
+func TestAuthLoginSignalAtPromptAborts(t *testing.T) {
+	// Pinning the list rather than just iterating it: iterating alone would
+	// still pass if Execute stopped registering SIGTERM.
+	signals := []os.Signal{os.Interrupt, syscall.SIGTERM}
+	if got := interruptSignals(); !slices.Equal(got, signals) {
+		t.Fatalf("interruptSignals() = %v, want %v", got, signals)
+	}
+
+	self, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatalf("os.FindProcess() error = %v", err)
+	}
+
+	for _, sig := range signals {
+		t.Run(sig.String(), func(t *testing.T) {
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			srv := newAuthTestServer(t, "myws.slack.com", "T1")
+			stubSlackClientFactory(t, srv)
+
+			// The same registration Execute makes, so the signal is
+			// handled here instead of terminating the test binary.
+			ctx, stop := signal.NotifyContext(context.Background(), sig)
+			defer stop()
+
+			stdin := newInterruptedStdin(t, func() {
+				if err := self.Signal(sig); err != nil {
+					t.Errorf("sending %v to the test process: %v", sig, err)
+				}
+			}, "xoxp-abc\n")
+
+			stderr, exit, err := runAuthLoginWithContext(t, ctx, stdin)
+			assertInterrupted(t, stderr, exit, err)
+			assertConfigUnchanged(t, nil)
+		})
 	}
 }

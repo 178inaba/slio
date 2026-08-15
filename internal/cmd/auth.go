@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -48,6 +49,15 @@ func runAuthLogin(cmd *cobra.Command, g *globalFlags) error {
 	// machine-readable output. auth login has none, so it writes no stdout.
 	errOut := cmd.ErrOrStderr()
 
+	// promptCtx is the signal context: a prompt has to abort on Ctrl-C, but
+	// must not inherit --timeout, which is a deadline for the requests
+	// rather than for how long the user may take to type. Keeping the two
+	// under distinct names matters here — the commandContext call below is
+	// in this same block, so a `ctx` declared now would be reassigned by it
+	// rather than shadowed, and every later prompt would silently pick up
+	// the deadline.
+	promptCtx := cmd.Context()
+
 	// Masking the token needs a real terminal. Non-TTY callers (agents, CI)
 	// are pointed at the env var instead; a non-*os.File reader is the test
 	// seam and reads answers line by line.
@@ -62,7 +72,7 @@ func runAuthLogin(cmd *cobra.Command, g *globalFlags) error {
 	// prompts, so the two never disagree about buffered bytes.
 	in := bufio.NewReader(stdin)
 
-	token, err := promptToken(errOut, in, stdinFile)
+	token, err := promptToken(promptCtx, errOut, in, stdinFile)
 	if err != nil {
 		return fmt.Errorf("read token: %w", err)
 	}
@@ -71,9 +81,9 @@ func runAuthLogin(cmd *cobra.Command, g *globalFlags) error {
 			"because search.messages requires a user token", "xoxp-", "xoxb-")
 	}
 
-	ctx, cancel := commandContext(cmd, g.timeout)
+	reqCtx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
-	result, err := slackClientFactory(token).AuthTest(ctx)
+	result, err := slackClientFactory(token).AuthTest(reqCtx)
 	if err != nil {
 		return fmt.Errorf("verify token: %w", err)
 	}
@@ -93,7 +103,7 @@ func runAuthLogin(cmd *cobra.Command, g *globalFlags) error {
 
 	var name string
 	if existingName != "" {
-		aborted, err := confirmOrAbort(errOut, in, fmt.Sprintf(
+		aborted, err := confirmOrAbort(promptCtx, errOut, in, fmt.Sprintf(
 			"Profile %q is already registered for %s. Overwrite the stored token? [y/N]: ",
 			existingName, result.Host))
 		if err != nil {
@@ -105,7 +115,7 @@ func runAuthLogin(cmd *cobra.Command, g *globalFlags) error {
 		name = existingName
 	} else {
 		proposed := proposedProfileName(result.Host)
-		typed, err := promptLine(errOut, in, fmt.Sprintf(
+		typed, err := promptLine(promptCtx, errOut, in, fmt.Sprintf(
 			"Detected workspace %s. Register as profile %q? "+
 				"Press Enter to accept, or type a different name: ", result.Host, proposed))
 		if err != nil {
@@ -117,7 +127,7 @@ func runAuthLogin(cmd *cobra.Command, g *globalFlags) error {
 		}
 
 		if other, ok := file.Profiles[name]; ok && other.Host != result.Host {
-			aborted, err := confirmOrAbort(errOut, in, fmt.Sprintf(
+			aborted, err := confirmOrAbort(promptCtx, errOut, in, fmt.Sprintf(
 				"Profile %q is already registered for a different workspace (%s). Overwrite it? [y/N]: ",
 				name, other.Host))
 			if err != nil {
@@ -133,6 +143,12 @@ func runAuthLogin(cmd *cobra.Command, g *globalFlags) error {
 	setDefault := file.DefaultProfile == ""
 	if setDefault {
 		file.DefaultProfile = name
+	}
+	// A signal can still land between the last prompt and the write. The
+	// prompts aborting is the primary mechanism; this closes what is left
+	// of the window.
+	if err := promptCtx.Err(); err != nil {
+		return err
 	}
 	if err := file.Save(); err != nil {
 		return err
@@ -156,8 +172,47 @@ func proposedProfileName(host string) string {
 	return name
 }
 
-func readLine(r *bufio.Reader) (string, error) {
-	line, err := r.ReadString('\n')
+// errPromptCancelled reports a prompt that ended because the command's
+// context was cancelled. That context is the signal one, so Execute already
+// prefixes "interrupted: " and exits 1; the wording avoids repeating the
+// word rather than saying it twice.
+var errPromptCancelled = errors.New("cancelled at the prompt")
+
+// readCancellable runs a blocking read and gives up on it as soon as ctx is
+// done, so a signal ends the command instead of waiting for the keystroke
+// the user is no longer going to type.
+//
+// The read runs in a goroutine because one that has already blocked cannot
+// be unblocked without closing the descriptor. On the cancel branch that
+// goroutine stays parked in the read for the rest of the process's life,
+// which is short by then: the channel is buffered so its send does not
+// block once nobody is receiving, and no later prompt can race it because
+// every caller returns as soon as this one is cancelled.
+func readCancellable[T any](ctx context.Context, read func() (T, error)) (T, error) {
+	type result struct {
+		value T
+		err   error
+	}
+
+	done := make(chan result, 1)
+	go func() {
+		value, err := read()
+		done <- result{value: value, err: err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		var zero T
+		return zero, errPromptCancelled
+	case res := <-done:
+		return res.value, res.err
+	}
+}
+
+func readLine(ctx context.Context, r *bufio.Reader) (string, error) {
+	line, err := readCancellable(ctx, func() (string, error) {
+		return r.ReadString('\n')
+	})
 	if err != nil && line == "" {
 		return "", err
 	}
@@ -165,26 +220,43 @@ func readLine(r *bufio.Reader) (string, error) {
 }
 
 // promptLine writes the prompt to out and reads one trimmed line.
-func promptLine(out io.Writer, in *bufio.Reader, prompt string) (string, error) {
+func promptLine(ctx context.Context, out io.Writer, in *bufio.Reader, prompt string) (string, error) {
 	if _, err := fmt.Fprint(out, prompt); err != nil {
 		return "", err
 	}
-	return readLine(in)
+	return readLine(ctx, in)
 }
 
 // promptToken reads the token without echoing it. A non-nil stdinFile is
 // guaranteed to be a terminal by the guard in runAuthLogin; the test seam
 // falls back to a plain line read.
-func promptToken(out io.Writer, in *bufio.Reader, stdinFile *os.File) (string, error) {
+func promptToken(ctx context.Context, out io.Writer, in *bufio.Reader, stdinFile *os.File) (string, error) {
 	if _, err := fmt.Fprint(out, "Paste your Slack user OAuth token (xoxp-...): "); err != nil {
 		return "", err
 	}
 	if stdinFile == nil {
-		return readLine(in)
+		return readLine(ctx, in)
 	}
 
-	token, err := term.ReadPassword(int(stdinFile.Fd()))
+	// ReadPassword clears ECHO and restores the terminal from its own
+	// deferred call, which only runs once its read returns — never, on the
+	// cancelled path below. Capturing the state here is what lets this
+	// function put echo back instead of leaving the user's shell silent.
+	fd := int(stdinFile.Fd())
+	state, err := term.GetState(fd)
 	if err != nil {
+		return "", err
+	}
+
+	token, err := readCancellable(ctx, func() ([]byte, error) {
+		return term.ReadPassword(fd)
+	})
+	if err != nil {
+		if errors.Is(err, errPromptCancelled) {
+			if err := term.Restore(fd, state); err != nil {
+				return "", err
+			}
+		}
 		return "", err
 	}
 	// ReadPassword leaves the newline the user typed unechoed, so emit one to
@@ -195,8 +267,8 @@ func promptToken(out io.Writer, in *bufio.Reader, stdinFile *os.File) (string, e
 	return strings.TrimSpace(string(token)), nil
 }
 
-func confirm(out io.Writer, in *bufio.Reader, prompt string) (bool, error) {
-	line, err := promptLine(out, in, prompt)
+func confirm(ctx context.Context, out io.Writer, in *bufio.Reader, prompt string) (bool, error) {
+	line, err := promptLine(ctx, out, in, prompt)
 	if err != nil {
 		return false, err
 	}
@@ -207,8 +279,8 @@ func confirm(out io.Writer, in *bufio.Reader, prompt string) (bool, error) {
 // confirmOrAbort wraps confirm with the "declined -> print Aborted. and
 // report aborted=true" flow shared by both overwrite-confirmation prompts
 // in runAuthLogin.
-func confirmOrAbort(out io.Writer, in *bufio.Reader, prompt string) (aborted bool, err error) {
-	ok, err := confirm(out, in, prompt)
+func confirmOrAbort(ctx context.Context, out io.Writer, in *bufio.Reader, prompt string) (aborted bool, err error) {
+	ok, err := confirm(ctx, out, in, prompt)
 	if err != nil {
 		return false, err
 	}

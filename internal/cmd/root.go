@@ -78,11 +78,19 @@ func addFormatFlag(cmd *cobra.Command, outFormat *format.Format) {
 	cmd.Flags().Var(outFormat, "format", `output format: "md" or "json"`)
 }
 
+// interruptSignals lists the signals Execute cancels the command context
+// on. It is a function so tests can assert the registered set without a
+// second copy of the list to keep in step.
+func interruptSignals() []os.Signal {
+	return []os.Signal{os.Interrupt, syscall.SIGTERM}
+}
+
 // Execute runs the root command and returns the process exit code. SIGINT
 // and SIGTERM cancel the command context so in-flight requests stop instead
-// of running to completion after the user has given up on them.
+// of running to completion after the user has given up on them, and so
+// `auth login` abandons a prompt it is waiting on.
 func Execute() int {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), interruptSignals()...)
 	defer stop()
 
 	g := &globalFlags{}
@@ -149,7 +157,9 @@ func terminalFile(in io.Reader) (*os.File, bool) {
 // commandContext returns a context bound to --timeout. It must be called at
 // the point the first request is about to be issued, not at the top of RunE:
 // `auth login` prompts for credentials first, and starting the clock before
-// those prompts would fail a user who merely types slowly.
+// those prompts would fail a user who merely types slowly. The prompts
+// still abort on Ctrl-C, because they watch cmd.Context() — the signal
+// context this one derives from — directly.
 //
 // A zero timeout means no deadline: context.WithTimeout(ctx, 0) would expire
 // immediately, so that case returns the command's context unchanged.
