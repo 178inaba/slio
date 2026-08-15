@@ -13,6 +13,44 @@ import (
 	"time"
 )
 
+// Format is the output format selected by --format. It implements
+// pflag.Value, so a typo is rejected while cobra parses the flags — before
+// the command runs and issues any Slack request.
+type Format string
+
+// Formats accepted by --format.
+const (
+	Markdown Format = "md"
+	JSON     Format = "json"
+)
+
+func (f Format) String() string { return string(f) }
+
+// Set assigns only on success, so a rejected value leaves the receiver — the
+// flag's default — intact.
+func (f *Format) Set(s string) error {
+	switch v := Format(s); v {
+	case Markdown, JSON:
+		*f = v
+		return nil
+	}
+	return UnsupportedError(Format(s))
+}
+
+// Type names the value shown in the --format help line. It reports "string"
+// rather than "format" because that help text is part of the agent-facing
+// contract kept in sync across README.md, skills/slio/SKILL.md and the help
+// strings; see CLAUDE.md.
+func (Format) Type() string { return "string" }
+
+// UnsupportedError is shared by Set and by the callers that switch on a
+// Format: a Format converted from an arbitrary string still type-checks, so
+// a switch cannot assume its value went through Set. Keeping one constructor
+// means the accepted values are listed in one place.
+func UnsupportedError(f Format) error {
+	return fmt.Errorf("invalid --format %q: must be %q or %q", f, Markdown, JSON)
+}
+
 // Resolver maps a Slack user ID to its display name, used to expand
 // <@U…> mentions in message text. An empty return means "unknown" and
 // falls back to any inline display text Slack included, or the raw ID.

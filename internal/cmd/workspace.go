@@ -54,12 +54,11 @@ type jsonMessagesEnvelope struct {
 // results"). In JSON mode there's no leading/trailing distinction (object
 // field order doesn't matter to a consumer), so both collapse into a
 // single "notice" field so the output stays valid, parseable JSON.
-// outputFormat is the --format flag value; it can't be named format here
-// because that would shadow the format package.
-func writeMessages(cmd *cobra.Command, outputFormat string, messages []format.Message, resolve format.Resolver, leadingNotice, trailingNotice string) error {
+func writeMessages(cmd *cobra.Command, outputFormat format.Format, messages []format.Message, resolve format.Resolver, leadingNotice, trailingNotice string) error {
 	out := cmd.OutOrStdout()
 
-	if outputFormat == "json" {
+	switch outputFormat {
+	case format.JSON:
 		data, err := format.RenderJSON(messages, resolve)
 		if err != nil {
 			return err
@@ -74,23 +73,25 @@ func writeMessages(cmd *cobra.Command, outputFormat string, messages []format.Me
 		}
 		_, err = fmt.Fprintln(out, string(encoded))
 		return err
-	}
-
-	if leadingNotice != "" {
-		if _, err := fmt.Fprintln(out, leadingNotice); err != nil {
+	case format.Markdown:
+		if leadingNotice != "" {
+			if _, err := fmt.Fprintln(out, leadingNotice); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintln(out); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintln(out, format.RenderMarkdownList(messages, resolve)); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintln(out); err != nil {
-			return err
+		if trailingNotice != "" {
+			if _, err := fmt.Fprintln(out, trailingNotice); err != nil {
+				return err
+			}
 		}
+		return nil
+	default:
+		return format.UnsupportedError(outputFormat)
 	}
-	if _, err := fmt.Fprintln(out, format.RenderMarkdownList(messages, resolve)); err != nil {
-		return err
-	}
-	if trailingNotice != "" {
-		if _, err := fmt.Fprintln(out, trailingNotice); err != nil {
-			return err
-		}
-	}
-	return nil
 }

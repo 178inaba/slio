@@ -14,7 +14,7 @@ import (
 func newThreadCmd(g *globalFlags) *cobra.Command {
 	var (
 		download  bool
-		outFormat string
+		outFormat format.Format
 	)
 
 	cmd := &cobra.Command{
@@ -32,7 +32,7 @@ func newThreadCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
-func runThread(cmd *cobra.Command, args []string, g *globalFlags, download bool, outFormat string) error {
+func runThread(cmd *cobra.Command, args []string, g *globalFlags, download bool, outFormat format.Format) error {
 	ref, err := parse.ThreadURL(args[0])
 	if err != nil {
 		return err
