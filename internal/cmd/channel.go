@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/178inaba/slio/internal/cache"
+	"github.com/178inaba/slio/internal/format"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +21,7 @@ func newChannelCmd(g *globalFlags) *cobra.Command {
 }
 
 func newChannelListCmd(g *globalFlags) *cobra.Command {
-	var outFormat string
+	var outFormat format.Format
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -43,7 +44,7 @@ type jsonChannel struct {
 	Name string `json:"name"`
 }
 
-func runChannelList(cmd *cobra.Command, g *globalFlags, outFormat string) error {
+func runChannelList(cmd *cobra.Command, g *globalFlags, outFormat format.Format) error {
 	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
 
@@ -67,7 +68,8 @@ func runChannelList(cmd *cobra.Command, g *globalFlags, outFormat string) error 
 	}
 
 	out := cmd.OutOrStdout()
-	if outFormat == "json" {
+	switch outFormat {
+	case format.JSON:
 		list := make([]jsonChannel, len(channels))
 		for i, c := range channels {
 			list[i] = jsonChannel{ID: c.ID, Name: c.Name}
@@ -78,12 +80,14 @@ func runChannelList(cmd *cobra.Command, g *globalFlags, outFormat string) error 
 		}
 		_, err = fmt.Fprintln(out, string(data))
 		return err
-	}
-
-	for _, c := range channels {
-		if _, err := fmt.Fprintf(out, "#%s\t%s\n", c.Name, c.ID); err != nil {
-			return err
+	case format.Markdown:
+		for _, c := range channels {
+			if _, err := fmt.Fprintf(out, "#%s\t%s\n", c.Name, c.ID); err != nil {
+				return err
+			}
 		}
+		return nil
+	default:
+		return unsupportedFormatError(outFormat)
 	}
-	return nil
 }

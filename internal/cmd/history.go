@@ -20,7 +20,7 @@ func newHistoryCmd(g *globalFlags) *cobra.Command {
 		limit     int
 		since     string
 		until     string
-		outFormat string
+		outFormat format.Format
 	)
 
 	cmd := &cobra.Command{
@@ -42,7 +42,7 @@ func newHistoryCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
-func runHistory(cmd *cobra.Command, args []string, g *globalFlags, limit int, since, until, outFormat string) error {
+func runHistory(cmd *cobra.Command, args []string, g *globalFlags, limit int, since, until string, outFormat format.Format) error {
 	chArg, err := parse.ParseChannelArg(args[0])
 	if err != nil {
 		return err

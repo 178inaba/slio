@@ -14,7 +14,7 @@ const defaultSearchLimit = 20
 func newSearchCmd(g *globalFlags) *cobra.Command {
 	var (
 		limit     int
-		outFormat string
+		outFormat format.Format
 	)
 
 	cmd := &cobra.Command{
@@ -32,7 +32,7 @@ func newSearchCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
-func runSearch(cmd *cobra.Command, args []string, g *globalFlags, limit int, outFormat string) error {
+func runSearch(cmd *cobra.Command, args []string, g *globalFlags, limit int, outFormat format.Format) error {
 	query := args[0]
 
 	ctx, cancel := commandContext(cmd, g.timeout)

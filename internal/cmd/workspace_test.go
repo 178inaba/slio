@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -8,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/178inaba/slio/internal/format"
 	"github.com/178inaba/slio/internal/slackclient"
+	"github.com/spf13/cobra"
 )
 
 func TestResolveWorkspaceViaSlioToken(t *testing.T) {
@@ -77,5 +80,23 @@ func TestRunHistoryViaSlioTokenIncludesThreadPermalink(t *testing.T) {
 
 	if !strings.Contains(got, "myws.slack.com") {
 		t.Errorf("output = %q, want a thread permalink built from the auth.test-resolved host", got)
+	}
+}
+
+// A format.Format converted from an arbitrary string bypasses Set, so
+// writeMessages keeps its own guard rather than trusting the type — and
+// falls back to neither renderer. Only a direct call can reach it: the flag
+// itself can no longer carry an unknown value.
+func TestWriteMessagesUnknownFormat(t *testing.T) {
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	err := writeMessages(cmd, format.Format("yaml"), nil, func(string) string { return "" }, "", "")
+	if err == nil || !strings.Contains(err.Error(), "yaml") {
+		t.Fatalf("writeMessages(yaml) error = %v, want an unsupported-format error naming it", err)
+	}
+	if out.Len() != 0 {
+		t.Errorf("output = %q, want nothing written for an unsupported format", out.String())
 	}
 }

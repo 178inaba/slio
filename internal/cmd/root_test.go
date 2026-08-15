@@ -13,9 +13,13 @@ import (
 )
 
 // TestInvalidFormatIsRejected covers the wiring of the --format validation:
-// it runs as the command's PreRunE, so a command must reject a bad value
-// before doing any work. A command that reaches the API would fail the test
-// by connecting to the real Slack endpoint.
+// format.Format rejects a bad value while cobra parses the flags, so the
+// command never runs. A command that reached the API would fail the test by
+// connecting to the real Slack endpoint.
+//
+// pflag wraps the Set error, so the assertion is on a substring: the full
+// message reads `invalid argument "yaml" for "--format" flag: invalid
+// --format "yaml": must be "md" or "json"`.
 func TestInvalidFormatIsRejected(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
@@ -23,8 +27,32 @@ func TestInvalidFormatIsRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("slio channel list --format yaml: error = nil, want error for an unsupported --format")
 	}
-	if !strings.Contains(err.Error(), "invalid --format") {
+	if !strings.Contains(err.Error(), `invalid --format "yaml"`) {
 		t.Errorf("error = %v, want it to report an invalid --format", err)
+	}
+}
+
+// TestFormatFlagHelpLine pins the `--format string` help line, which the
+// README and skills/slio/SKILL.md document alongside the help strings. The
+// type word comes from format.Format.Type, and the default from the value
+// addFormatFlag seeds before registering the flag.
+func TestFormatFlagHelpLine(t *testing.T) {
+	root := newRootCmd(&globalFlags{})
+
+	thread, _, err := root.Find([]string{"thread"})
+	if err != nil {
+		t.Fatalf("find thread command: %v", err)
+	}
+	flag := thread.Flags().Lookup("format")
+	if flag == nil {
+		t.Fatal("slio thread has no --format flag")
+	}
+
+	if got := flag.Value.Type(); got != "string" {
+		t.Errorf("--format type = %q, want %q", got, "string")
+	}
+	if got := flag.DefValue; got != "md" {
+		t.Errorf("--format default = %q, want %q", got, "md")
 	}
 }
 

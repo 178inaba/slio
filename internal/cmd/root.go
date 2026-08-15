@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/178inaba/slio/internal/format"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -62,28 +63,27 @@ discussions directly instead of relying on pasted screenshots.`,
 	return cmd
 }
 
-// addFormatFlag registers --format on a single command, along with the check
-// that rejects an unknown value. It is registered per command rather than on
-// the root so it never appears on `auth` and `profile`, which would silently
-// ignore it; pairing the two here means a command cannot take the flag
-// without also validating it.
+// addFormatFlag registers --format on a single command. It is registered per
+// command rather than on the root so it never appears on `auth` and
+// `profile`, which would silently ignore it.
 //
-// The check hangs off PreRunE rather than starting RunE because cobra
-// validates required flags in between, and an unknown format has to be
-// reported ahead of a missing flag. That also means this owns cmd.PreRunE: a
-// command that later sets its own would drop the check.
-func addFormatFlag(cmd *cobra.Command, outFormat *string) {
-	cmd.Flags().StringVar(outFormat, "format", "md", `output format: "md" or "json"`)
-	cmd.PreRunE = func(*cobra.Command, []string) error {
-		return validateFormat(*outFormat)
-	}
+// The value carries its own validation: format.Format implements
+// pflag.Value, so cobra rejects an unknown format while parsing the flags,
+// before any PreRunE or RunE runs. There is no hook here for a command to
+// take over, and no way to reach a command body with an unvalidated value.
+func addFormatFlag(cmd *cobra.Command, outFormat *format.Format) {
+	// pflag takes the flag's default from the value the variable already
+	// holds, so the default lives here rather than at each declaration.
+	*outFormat = format.Markdown
+	cmd.Flags().Var(outFormat, "format", `output format: "md" or "json"`)
 }
 
-func validateFormat(format string) error {
-	if format != "md" && format != "json" {
-		return fmt.Errorf(`invalid --format %q: must be "md" or "json"`, format)
-	}
-	return nil
+// unsupportedFormatError reports a Format that no writer handles.
+// Format.Set rejects an unknown --format during flag parsing, but a Format
+// converted from an arbitrary string bypasses Set, so the writers keep their
+// own guard.
+func unsupportedFormatError(f format.Format) error {
+	return fmt.Errorf("unsupported output format %q", f)
 }
 
 // Execute runs the root command and returns the process exit code. SIGINT
