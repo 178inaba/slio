@@ -109,6 +109,58 @@ func TestFormatFlagIsUnknownWhereItDoesNothing(t *testing.T) {
 	}
 }
 
+// TestHelpCommandUnknownTopicFails covers the half of the `help` command
+// slio owns rather than inherits: a topic that resolves to nothing is a
+// failed invocation, not a note printed on the way to exiting 0.
+func TestHelpCommandUnknownTopicFails(t *testing.T) {
+	stdout, _, err := runSlio(t, "help", "bogus")
+	if err == nil {
+		t.Fatal("slio help bogus: error = nil, want an unknown topic error")
+	}
+	if !strings.Contains(err.Error(), `unknown help topic "bogus"`) {
+		t.Errorf("error = %v, want it to name the topic", err)
+	}
+	// The help text cobra would have printed here is the reason this case
+	// is worth a test: it used to land on the stream reserved for data.
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+}
+
+// TestHelpCommandResolvesTopics pins what the replacement kept from cobra's
+// own help command, so the failure case above cannot be bought by breaking
+// the ordinary ones.
+func TestHelpCommandResolvesTopics(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantHelp string
+	}{
+		{name: "no topic is the root's own help", args: []string{"help"}, wantHelp: "slio fetches Slack threads"},
+		{name: "a group", args: []string{"help", "auth"}, wantHelp: "Manage authentication"},
+		{name: "a runnable command", args: []string{"help", "channel", "list"}, wantHelp: "List channels visible"},
+		// Find stops at the deepest command it recognises, so the leftover
+		// argument leaves the topic resolved rather than unknown.
+		{name: "a trailing unknown argument keeps the topic", args: []string{"help", "auth", "bogus"}, wantHelp: "Manage authentication"},
+		{name: "the help command itself", args: []string{"help", "help"}, wantHelp: "Help provides help for any command"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, stderr, err := runSlio(t, tt.args...)
+			if err != nil {
+				t.Fatalf("slio %s: error = %v, stderr = %s", strings.Join(tt.args, " "), err, stderr)
+			}
+			if !strings.Contains(stdout, tt.wantHelp) {
+				t.Errorf("stdout = %q, want it to contain %q", stdout, tt.wantHelp)
+			}
+			if stderr != "" {
+				t.Errorf("stderr = %q, want empty", stderr)
+			}
+		})
+	}
+}
+
 // TestClassifyFailure covers the contract slio shares with cflio and rdsh:
 // 0 on success, 124 when --timeout expired, 1 for everything else. An agent
 // reads 124 as "raise the deadline and retry", so nothing else may produce

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/178inaba/slio/internal/format"
@@ -47,6 +48,10 @@ discussions directly instead of relying on pasted screenshots.`,
 	cmd.PersistentFlags().DurationVar(&g.timeout, "timeout", defaultTimeout,
 		"overall deadline for the invocation, as a Go duration (0 = no deadline)")
 
+	// Registered before cobra would generate its own in InitDefaultHelpCmd,
+	// which only builds one when none is set.
+	cmd.SetHelpCommand(newHelpCmd())
+
 	cmd.AddCommand(
 		newThreadCmd(g),
 		newHistoryCmd(g),
@@ -59,6 +64,59 @@ discussions directly instead of relying on pasted screenshots.`,
 	)
 
 	return cmd
+}
+
+// newHelpCmd builds the `help` command in place of the one cobra generates.
+//
+// Two things differ from cobra's. An unknown topic returns an error rather
+// than being printed and exiting 0, which is the same failure any other bad
+// argument gets. And the message reaches the user through Execute, so it
+// lands on stderr whatever writers the tree carries: cobra's version prints
+// it with Command.Print, which resolves to OutOrStderr — and OutOrStderr
+// answers with the out writer whenever one is set, so setting one would move
+// the message onto the stream reserved for data.
+func newHelpCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "help [command]",
+		Short: "Help about any command",
+		Long: `Help provides help for any command in the application.
+Simply type slio help [path to command] for full details.`,
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+			target, _, err := cmd.Root().Find(args)
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			if target == nil {
+				target = cmd.Root()
+			}
+
+			var completions []cobra.Completion
+			for _, sub := range target.Commands() {
+				// IsAvailableCommand reports false for the tree's own help
+				// command, and it decides that before it looks at whether
+				// the command runs, so the name test is what keeps `help`
+				// among its own candidates.
+				if !sub.IsAvailableCommand() && sub.Name() != "help" {
+					continue
+				}
+				if strings.HasPrefix(sub.Name(), toComplete) {
+					completions = append(completions, cobra.CompletionWithDesc(sub.Name(), sub.Short))
+				}
+			}
+			return completions, cobra.ShellCompDirectiveNoFileComp
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			target, _, err := cmd.Root().Find(args)
+			if target == nil || err != nil {
+				return fmt.Errorf("unknown help topic %q", strings.Join(args, " "))
+			}
+			// The flag is registered lazily while executing, so a command
+			// reached this way has to be given one before its help is
+			// rendered, or the listing would omit --help.
+			target.InitDefaultHelpFlag()
+			return target.Help()
+		},
+	}
 }
 
 // addFormatFlag registers --format on a single command. It is registered per
