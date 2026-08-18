@@ -73,9 +73,9 @@ func TestRunHistoryViaSlioTokenIncludesThreadPermalink(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	got, _, err := runSlio(t, "history", "C1")
-	if err != nil {
-		t.Fatalf("slio history: %v", err)
+	got, stderr, code := runSlio(t, "history", "C1")
+	if code != 0 {
+		t.Fatalf("slio history: exit code = %d, stderr = %s", code, stderr)
 	}
 
 	if !strings.Contains(got, "myws.slack.com") {

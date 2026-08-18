@@ -134,7 +134,11 @@ func addFormatFlag(cmd *cobra.Command, outFormat *format.Format) {
 	cmd.Flags().Var(outFormat, "format", `output format: "md" or "json"`)
 }
 
-// Execute runs the root command and returns the process exit code.
+// Execute runs the root command against args and returns the process exit
+// code. The arguments and the streams are parameters rather than the
+// process ones so that a test can drive this same path: the exit code and
+// the split between the streams are both part of slio's contract, and
+// neither is observable from a test that only runs the command tree.
 //
 // Nothing here catches SIGINT or SIGTERM. The Go default — terminate by the
 // signal, print nothing — is what an interrupted run should do, so no error
@@ -142,16 +146,24 @@ func addFormatFlag(cmd *cobra.Command, outFormat *format.Format) {
 // property is structural rather than a branch that has to run first. The
 // one place with work to do between the signal and the process ending arms
 // its own guard around it (terminalGuard in auth.go).
-func Execute() int {
+func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	g := &globalFlags{}
+
+	root := newRootCmd(g)
+	root.SetArgs(args)
+	root.SetIn(stdin)
+	root.SetOut(stdout)
+	root.SetErr(stderr)
 
 	// Two statements rather than one: g.timeout is only final after flag
 	// parsing, which happens inside Execute, and Go orders function calls
 	// against a plain operand read only by convention, not by spec.
-	err := newRootCmd(g).Execute()
+	err := root.Execute()
 	code, err := classifyFailure(err, g.timeout)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
+		// errcheck's default exclusions match the writer expression, so
+		// they cover fmt.Fprintln(os.Stderr, …) but not a parameter.
+		_, _ = fmt.Fprintln(stderr, "Error:", err)
 	}
 	return code
 }

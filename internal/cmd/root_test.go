@@ -23,12 +23,12 @@ import (
 func TestInvalidFormatIsRejected(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	_, _, err := runSlio(t, "channel", "list", "--format", "yaml")
-	if err == nil {
-		t.Fatal("slio channel list --format yaml: error = nil, want error for an unsupported --format")
+	_, stderr, code := runSlio(t, "channel", "list", "--format", "yaml")
+	if code == 0 {
+		t.Fatal("slio channel list --format yaml: exit code = 0, want a failure for an unsupported --format")
 	}
-	if !strings.Contains(err.Error(), `invalid --format "yaml"`) {
-		t.Errorf("error = %v, want it to report an invalid --format", err)
+	if got := errorLine(t, stderr); !strings.Contains(got, `invalid --format "yaml"`) {
+		t.Errorf("reported %q, want it to report an invalid --format", got)
 	}
 }
 
@@ -100,12 +100,12 @@ func TestFormatFlagRegistration(t *testing.T) {
 func TestFormatFlagIsUnknownWhereItDoesNothing(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	_, _, err := runSlio(t, "auth", "login", "--format", "json")
-	if err == nil {
-		t.Fatal("slio auth login --format json: error = nil, want an unknown flag error")
+	_, stderr, code := runSlio(t, "auth", "login", "--format", "json")
+	if code == 0 {
+		t.Fatal("slio auth login --format json: exit code = 0, want an unknown flag failure")
 	}
-	if !strings.Contains(err.Error(), "unknown flag: --format") {
-		t.Errorf("error = %v, want it to report an unknown --format flag", err)
+	if got := errorLine(t, stderr); !strings.Contains(got, "unknown flag: --format") {
+		t.Errorf("reported %q, want it to report an unknown --format flag", got)
 	}
 }
 
@@ -113,12 +113,12 @@ func TestFormatFlagIsUnknownWhereItDoesNothing(t *testing.T) {
 // slio owns rather than inherits: a topic that resolves to nothing is a
 // failed invocation, not a note printed on the way to exiting 0.
 func TestHelpCommandUnknownTopicFails(t *testing.T) {
-	stdout, _, err := runSlio(t, "help", "bogus")
-	if err == nil {
-		t.Fatal("slio help bogus: error = nil, want an unknown topic error")
+	stdout, stderr, code := runSlio(t, "help", "bogus")
+	if code != 1 {
+		t.Fatalf("slio help bogus: exit code = %d, want 1", code)
 	}
-	if !strings.Contains(err.Error(), `unknown help topic "bogus"`) {
-		t.Errorf("error = %v, want it to name the topic", err)
+	if got := errorLine(t, stderr); !strings.Contains(got, `unknown help topic "bogus"`) {
+		t.Errorf("reported %q, want it to name the topic", got)
 	}
 	// The help text cobra would have printed here is the reason this case
 	// is worth a test: it used to land on the stream reserved for data.
@@ -147,9 +147,9 @@ func TestHelpCommandResolvesTopics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stdout, stderr, err := runSlio(t, tt.args...)
-			if err != nil {
-				t.Fatalf("slio %s: error = %v, stderr = %s", strings.Join(tt.args, " "), err, stderr)
+			stdout, stderr, code := runSlio(t, tt.args...)
+			if code != 0 {
+				t.Fatalf("slio %s: exit code = %d, stderr = %s", strings.Join(tt.args, " "), code, stderr)
 			}
 			if !strings.Contains(stdout, tt.wantHelp) {
 				t.Errorf("stdout = %q, want it to contain %q", stdout, tt.wantHelp)
@@ -258,7 +258,7 @@ func TestTimeoutFlagTakesADuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			root, _, _ := newTestRoot(t)
+			root := newRootCmd(&globalFlags{})
 
 			err := root.ParseFlags([]string{"--timeout", tt.value})
 			if !tt.wantErr {

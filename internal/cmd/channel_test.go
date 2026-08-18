@@ -24,9 +24,9 @@ func TestRunChannelListMarkdown(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	got, _, err := runSlio(t, "channel", "list")
-	if err != nil {
-		t.Fatalf("slio channel list: %v", err)
+	got, stderr, code := runSlio(t, "channel", "list")
+	if code != 0 {
+		t.Fatalf("slio channel list: exit code = %d, stderr = %s", code, stderr)
 	}
 
 	if !strings.Contains(got, "general") || !strings.Contains(got, "random") {
@@ -46,9 +46,9 @@ func TestRunChannelListJSON(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	got, _, err := runSlio(t, "channel", "list", "--format", "json")
-	if err != nil {
-		t.Fatalf("slio channel list --format json: %v", err)
+	got, stderr, code := runSlio(t, "channel", "list", "--format", "json")
+	if code != 0 {
+		t.Fatalf("slio channel list --format json: exit code = %d, stderr = %s", code, stderr)
 	}
 
 	var channels []jsonChannel
@@ -72,8 +72,8 @@ func TestRunChannelListPopulatesCacheForNameResolution(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	if _, _, err := runSlio(t, "channel", "list"); err != nil {
-		t.Fatalf("slio channel list: %v", err)
+	if _, stderr, code := runSlio(t, "channel", "list"); code != 0 {
+		t.Fatalf("slio channel list: exit code = %d, stderr = %s", code, stderr)
 	}
 
 	store, err := cache.Open("myws")
