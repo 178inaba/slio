@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/178inaba/slio/internal/config"
 	"github.com/178inaba/slio/internal/slackclient"
@@ -236,8 +238,108 @@ func promptLine(ctx context.Context, out io.Writer, in *bufio.Reader, prompt str
 	return readLine(ctx, out, in)
 }
 
+// interruptSignals lists the signals the terminal guard catches. It is a
+// function so tests can assert the registered set without a second copy of
+// the list to keep in step.
+func interruptSignals() []os.Signal {
+	return []os.Signal{os.Interrupt, syscall.SIGTERM}
+}
+
+// terminalGuard puts the terminal back and then re-raises, so an interrupt
+// during the masked token read ends the process by the signal the user sent
+// rather than through an error report.
+//
+// Nothing else in slio needs the signal caught: dying immediately is
+// already the wanted behaviour everywhere else, and the modified terminal
+// is the only thing that would outlive the process badly.
+//
+// reset, restore and reraise are fields rather than direct calls because
+// none of them can run under test — restore needs a real terminal, and
+// reraise ends the process. newTerminalGuard fills them with the real ones.
+type terminalGuard struct {
+	out     io.Writer
+	fd      int
+	state   *term.State
+	reset   func(...os.Signal)
+	restore func(int, *term.State) error
+	reraise func(syscall.Signal) // does not return
+}
+
+func newTerminalGuard(out io.Writer, fd int, state *term.State) *terminalGuard {
+	return &terminalGuard{
+		out:     out,
+		fd:      fd,
+		state:   state,
+		reset:   signal.Reset,
+		restore: term.Restore,
+		reraise: reraise,
+	}
+}
+
+// arm starts catching the interrupt signals and returns the call that stops
+// it again. The guard handles at most one signal: the process is meant to
+// die of it, so there is no second one to serve.
+//
+// Disarming is best-effort against a signal that has already been taken,
+// and losing that race is harmless — the user pressed Ctrl-C, and the
+// process dying is the wanted outcome either way.
+func (g *terminalGuard) arm() (disarm func()) {
+	// Buffered, as signal.Notify requires: the runtime drops a signal
+	// rather than blocking on the send.
+	received := make(chan os.Signal, 1)
+	signal.Notify(received, interruptSignals()...)
+
+	disarmed := make(chan struct{})
+	go func() {
+		select {
+		case <-disarmed:
+		case sig := <-received:
+			g.handle(sig)
+		}
+	}()
+
+	return func() {
+		signal.Stop(received)
+		close(disarmed)
+	}
+}
+
+// handle runs the clean-up the guard exists for. The order is load-bearing:
+// resetting the handlers first is what lets a second signal end the process
+// at once instead of queueing behind the restore, which the Command Line
+// Interface Guidelines ask for. The cost is that a second signal landing in
+// the microseconds before the restore leaves echo off; `stty sane` recovers
+// it, and re-arming to close that window would reinstate the very problem
+// the reset is here to avoid.
+//
+// Every signal interruptSignals returns is reset, not just the one that
+// arrived: signal.Reset is variadic and resets only what it is given, so a
+// SIGTERM following a SIGINT would otherwise land in a channel nobody reads.
+func (g *terminalGuard) handle(sig os.Signal) {
+	g.reset(interruptSignals()...)
+
+	// Both errors are dropped rather than reported: an interrupted run
+	// prints no failure report, and there is no branch left to take with
+	// the process about to die of the signal.
+	_ = g.restore(g.fd, g.state)
+	// Nothing echoes the interrupt with ECHO cleared, so this newline is
+	// what ends the prompt's line.
+	_, _ = fmt.Fprintln(g.out)
+
+	// A signal that is not a syscall.Signal carries no number to build a
+	// status from. interruptSignals yields only ones that are, so this
+	// cannot happen in practice.
+	s, ok := sig.(syscall.Signal)
+	if !ok {
+		os.Exit(1)
+	}
+	// The guard runs on its own goroutine rather than on the path that
+	// returns from Execute, so this ends the process instead of a code.
+	g.reraise(s)
+}
+
 // promptToken reads the token without echoing it. A non-nil stdinFile is
-// guaranteed to be a terminal by the guard in runAuthLogin; the test seam
+// guaranteed to be a terminal by the check in runAuthLogin; the test seam
 // falls back to a plain line read.
 func promptToken(ctx context.Context, out io.Writer, in *bufio.Reader, stdinFile *os.File) (string, error) {
 	if _, err := fmt.Fprint(out, "Paste your Slack user OAuth token (xoxp-...): "); err != nil {
@@ -257,9 +359,16 @@ func promptToken(ctx context.Context, out io.Writer, in *bufio.Reader, stdinFile
 		return "", err
 	}
 
+	// term.GetState only reads, so arming after it still leaves the guarded
+	// window a strict superset of the modified one: a signal arriving
+	// before ReadPassword clears ECHO restores a state that was never
+	// changed, which is a no-op. There is no window in which the terminal
+	// is modified and unguarded.
+	disarm := newTerminalGuard(out, fd, state).arm()
 	token, err := readCancellable(ctx, func() ([]byte, error) {
 		return term.ReadPassword(fd)
 	})
+	disarm()
 	if err != nil {
 		if errors.Is(err, errPromptCancelled) {
 			if err := term.Restore(fd, state); err != nil {

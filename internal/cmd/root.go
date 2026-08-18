@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/178inaba/slio/internal/format"
@@ -76,13 +75,6 @@ func addFormatFlag(cmd *cobra.Command, outFormat *format.Format) {
 	// holds, so the default lives here rather than at each declaration.
 	*outFormat = format.Markdown
 	cmd.Flags().Var(outFormat, "format", `output format: "md" or "json"`)
-}
-
-// interruptSignals lists the signals Execute cancels the command context
-// on. It is a function so tests can assert the registered set without a
-// second copy of the list to keep in step.
-func interruptSignals() []os.Signal {
-	return []os.Signal{os.Interrupt, syscall.SIGTERM}
 }
 
 // Execute runs the root command and returns the process exit code. SIGINT
