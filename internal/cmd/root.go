@@ -19,6 +19,11 @@ const defaultTimeout = 90 * time.Second
 // timeoutExitCode follows the GNU timeout convention.
 const timeoutExitCode = 124
 
+// errorPrefix leads every failure slio reports, as the README promises. It
+// is shared so that the report Execute writes and the one the help function
+// writes cannot drift apart.
+const errorPrefix = "Error:"
+
 // globalFlags carries the root persistent flag values into each command's
 // RunE. newRootCmd binds them and hands the same pointer to every
 // constructor that needs them, so no command or flag state lives at package
@@ -120,8 +125,8 @@ func reportUnknownCommand(cmd *cobra.Command, arg string) {
 	}
 	// A single write, so the report reaches stderr exactly once — and stays
 	// off stdout, where the help text it replaces used to land.
-	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Error: unknown command %q for %q%s\n",
-		arg, cmd.CommandPath(), suggestions)
+	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%s unknown command %q for %q%s\n",
+		errorPrefix, arg, cmd.CommandPath(), suggestions)
 }
 
 // suggestionsFor lists the subcommands worth offering for an argument that
@@ -244,7 +249,7 @@ func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err != nil {
 		// errcheck's default exclusions match the writer expression, so
 		// they cover fmt.Fprintln(os.Stderr, …) but not a parameter.
-		_, _ = fmt.Fprintln(stderr, "Error:", err)
+		_, _ = fmt.Fprintln(stderr, errorPrefix, err)
 	}
 	return code
 }

@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-// errorPrefix is what Execute puts in front of the message it reports. It
-// is the marker errorLine looks for, and the one the README promises.
-const errorPrefix = "Error: "
+// errorMarker is how a report opens once Fprintln has joined errorPrefix to
+// the message with a space. errorLine searches for it.
+const errorMarker = errorPrefix + " "
 
 // runSlio runs slio the way the binary does — through Execute — and reports
 // the exit code alongside what each stream received. Driving Execute rather
@@ -50,10 +50,10 @@ func runSlioWithStdin(t *testing.T, stdin io.Reader, args ...string) (stdout, st
 // "xoxp-" pass with no error reported at all.
 func errorLine(t *testing.T, stderr string) string {
 	t.Helper()
-	if got := strings.Count(stderr, errorPrefix); got != 1 {
-		t.Fatalf("stderr carries %d %q markers, want exactly 1: %q", got, errorPrefix, stderr)
+	if got := strings.Count(stderr, errorMarker); got != 1 {
+		t.Fatalf("stderr carries %d %q markers, want exactly 1: %q", got, errorMarker, stderr)
 	}
-	line := stderr[strings.Index(stderr, errorPrefix):]
+	line := stderr[strings.Index(stderr, errorMarker):]
 	if end := strings.IndexByte(line, '\n'); end >= 0 {
 		line = line[:end]
 	}
