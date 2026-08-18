@@ -131,6 +131,10 @@ func TestHelpCommandUnknownTopicFails(t *testing.T) {
 // TestHelpCommandResolvesTopics pins what the replacement kept from cobra's
 // own help command, so the failure case above cannot be bought by breaking
 // the ordinary ones.
+//
+// These rows also cover the `help` command against the help-function
+// override: its RunE calls Help(), which resolves to the override, and only
+// an empty argument list carries them past it to the default rendering.
 func TestHelpCommandResolvesTopics(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -234,13 +238,10 @@ func TestGroupHelpArgumentSuggestsTheFlag(t *testing.T) {
 
 // TestHelpRequestsAreUnaffected is the other side of the override: every way
 // of actually asking for help still prints it to stdout and succeeds. The
-// `help` command rows matter most — its RunE calls Help(), which resolves to
-// the override, and only the empty argument list carries them past it.
+// `help` command has its own rows in TestHelpCommandResolvesTopics, which
+// assert the rendered text rather than just its shape.
 func TestHelpRequestsAreUnaffected(t *testing.T) {
-	argLists := [][]string{
-		{}, {"--help"},
-		{"help"}, {"help", "auth"},
-	}
+	argLists := [][]string{{}, {"--help"}}
 	for _, group := range groupCommands {
 		argLists = append(argLists, []string{group}, []string{group, "--help"})
 	}
