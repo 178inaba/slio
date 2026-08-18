@@ -195,6 +195,12 @@ Simply type slio help [path to command] for full details.`,
 			// The flag is registered lazily while executing, so a command
 			// reached this way has to be given one before its help is
 			// rendered, or the listing would omit --help.
+			//
+			// cobra's version also seeds the version flag and passes its
+			// context down. Neither is carried over: slio sets no Version,
+			// which makes InitDefaultVersionFlag a no-op, and the help
+			// templates read no context. Setting a Version would mean
+			// adding the first of those back.
 			target.InitDefaultHelpFlag()
 			return target.Help()
 		},
