@@ -50,9 +50,9 @@ func TestRunThreadRendersFullThread(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	got, _, err := runSlio(t, "thread", "https://myws.slack.com/archives/C1/p1234567890000001")
-	if err != nil {
-		t.Fatalf("slio thread: %v", err)
+	got, stderr, code := runSlio(t, "thread", "https://myws.slack.com/archives/C1/p1234567890000001")
+	if code != 0 {
+		t.Fatalf("slio thread: exit code = %d, stderr = %s", code, stderr)
 	}
 
 	if !strings.Contains(got, "Alice") {
@@ -67,12 +67,13 @@ func TestRunThreadUnregisteredWorkspace(t *testing.T) {
 	seedProfile(t, "myws.slack.com")
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
-	_, _, err := runSlio(t, "thread", "https://unknown.slack.com/archives/C1/p1234567890000001")
-	if err == nil {
-		t.Fatal("slio thread: error = nil, want error for an unregistered workspace")
+	_, stderr, code := runSlio(t, "thread", "https://unknown.slack.com/archives/C1/p1234567890000001")
+	if code == 0 {
+		t.Fatal("slio thread: exit code = 0, want a failure for an unregistered workspace")
 	}
-	if !strings.Contains(err.Error(), "unknown.slack.com") || !strings.Contains(err.Error(), "myws") || !strings.Contains(err.Error(), "auth login") {
-		t.Errorf("error = %v, want it to mention the host, registered profiles, and auth login", err)
+	got := errorLine(t, stderr)
+	if !strings.Contains(got, "unknown.slack.com") || !strings.Contains(got, "myws") || !strings.Contains(got, "auth login") {
+		t.Errorf("reported %q, want it to mention the host, registered profiles, and auth login", got)
 	}
 }
 
@@ -95,9 +96,9 @@ func TestRunThreadDownloadSavesAttachmentAndPrintsPath(t *testing.T) {
 		_, _ = fmt.Fprint(w, "file contents")
 	})
 
-	got, _, err := runSlio(t, "thread", "https://myws.slack.com/archives/C1/p1234567890000001", "--download")
-	if err != nil {
-		t.Fatalf("slio thread --download: %v", err)
+	got, stderr, code := runSlio(t, "thread", "https://myws.slack.com/archives/C1/p1234567890000001", "--download")
+	if code != 0 {
+		t.Fatalf("slio thread --download: exit code = %d, stderr = %s", code, stderr)
 	}
 
 	if !strings.Contains(got, "report.txt") {

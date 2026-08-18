@@ -28,9 +28,9 @@ func TestRunSearchPassesQueryThroughUnchanged(t *testing.T) {
 	stubSlackClientFactory(t, srv)
 
 	query := "in:#general from:@someone hello"
-	got, _, err := runSlio(t, "search", query)
-	if err != nil {
-		t.Fatalf("slio search: %v", err)
+	got, stderr, code := runSlio(t, "search", query)
+	if code != 0 {
+		t.Fatalf("slio search: exit code = %d, stderr = %s", code, stderr)
 	}
 
 	unescaped, err := url.QueryUnescape(gotQuery)
@@ -59,9 +59,9 @@ func TestRunSearchTrailingMoreResultsNotice(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	got, _, err := runSlio(t, "search", "hello", "--limit", "1")
-	if err != nil {
-		t.Fatalf("slio search --limit 1: %v", err)
+	got, stderr, code := runSlio(t, "search", "hello", "--limit", "1")
+	if code != 0 {
+		t.Fatalf("slio search --limit 1: exit code = %d, stderr = %s", code, stderr)
 	}
 
 	noticeIdx := strings.Index(got, "more results")

@@ -10,9 +10,9 @@ import (
 func TestProfileListNoProfiles(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	stdout, stderr, err := runSlio(t, "profile", "list")
-	if err != nil {
-		t.Fatalf("slio profile list: %v", err)
+	stdout, stderr, code := runSlio(t, "profile", "list")
+	if code != 0 {
+		t.Fatalf("slio profile list: exit code = %d, stderr = %s", code, stderr)
 	}
 	if !strings.Contains(stderr, "No profiles registered") {
 		t.Errorf("stderr = %q, want mention of no profiles registered", stderr)
@@ -35,9 +35,9 @@ func TestProfileListShowsProfiles(t *testing.T) {
 		t.Fatalf("seed config Save() error = %v", err)
 	}
 
-	got, _, err := runSlio(t, "profile", "list")
-	if err != nil {
-		t.Fatalf("slio profile list: %v", err)
+	got, stderr, code := runSlio(t, "profile", "list")
+	if code != 0 {
+		t.Fatalf("slio profile list: exit code = %d, stderr = %s", code, stderr)
 	}
 
 	if !strings.Contains(got, "myws") || !strings.Contains(got, "myws.slack.com") {
@@ -64,9 +64,9 @@ func TestProfileUseSwitchesDefault(t *testing.T) {
 		t.Fatalf("seed config Save() error = %v", err)
 	}
 
-	stdout, stderr, err := runSlio(t, "profile", "use", "otherws")
-	if err != nil {
-		t.Fatalf("slio profile use: %v", err)
+	stdout, stderr, code := runSlio(t, "profile", "use", "otherws")
+	if code != 0 {
+		t.Fatalf("slio profile use: exit code = %d, stderr = %s", code, stderr)
 	}
 	if !strings.Contains(stderr, "otherws") {
 		t.Errorf("stderr = %q, want mention of otherws", stderr)
@@ -96,12 +96,12 @@ func TestProfileUseUnknownName(t *testing.T) {
 		t.Fatalf("seed config Save() error = %v", err)
 	}
 
-	_, _, err := runSlio(t, "profile", "use", "nope")
-	if err == nil {
-		t.Fatal("slio profile use: error = nil, want error")
+	_, stderr, code := runSlio(t, "profile", "use", "nope")
+	if code == 0 {
+		t.Fatal("slio profile use: exit code = 0, want a failure")
 	}
-	if !strings.Contains(err.Error(), "myws") {
-		t.Errorf("error = %v, want mention of registered profiles", err)
+	if got := errorLine(t, stderr); !strings.Contains(got, "myws") {
+		t.Errorf("reported %q, want mention of registered profiles", got)
 	}
 
 	got, err := config.Load()

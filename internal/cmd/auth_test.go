@@ -60,23 +60,19 @@ func stubSlackClientFactoryAt(t *testing.T, apiURL string) *atomic.Bool {
 }
 
 // runAuthLoginForTest drives `auth login` to completion with the given
-// stdin and returns what it wrote to stderr. stdout is asserted empty for
-// every caller: the command is interactive only, so nothing it prints
-// belongs on the stream that carries machine-readable output. stdin is an
-// io.Reader rather than a string because the non-TTY case needs a real
-// *os.File.
-func runAuthLoginForTest(t *testing.T, stdin io.Reader) (string, error) {
+// stdin and returns what it wrote to stderr along with the exit code.
+// stdout is asserted empty for every caller: the command is interactive
+// only, so nothing it prints belongs on the stream that carries
+// machine-readable output. stdin is an io.Reader rather than a string
+// because the non-TTY case needs a real *os.File.
+func runAuthLoginForTest(t *testing.T, stdin io.Reader) (string, int) {
 	t.Helper()
-	root, out, errOut := newTestRoot(t)
-	root.SetIn(stdin)
-	root.SetArgs([]string{"auth", "login"})
+	stdout, stderr, code := runSlioWithStdin(t, stdin, "auth", "login")
 
-	err := root.Execute()
-
-	if out.Len() > 0 {
-		t.Errorf("stdout = %q, want empty", out.String())
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
 	}
-	return errOut.String(), err
+	return stderr, code
 }
 
 func TestAuthLoginRegistersNewProfile(t *testing.T) {
@@ -84,9 +80,9 @@ func TestAuthLoginRegistersNewProfile(t *testing.T) {
 	srv := newAuthTestServer(t, "myws.slack.com", "T1")
 	stubSlackClientFactory(t, srv)
 
-	stderr, err := runAuthLoginForTest(t, strings.NewReader("xoxp-abc\n\n"))
-	if err != nil {
-		t.Fatalf("runAuthLoginForTest() error = %v, stderr = %s", err, stderr)
+	stderr, code := runAuthLoginForTest(t, strings.NewReader("xoxp-abc\n\n"))
+	if code != 0 {
+		t.Fatalf("runAuthLoginForTest() exit code = %d, stderr = %s", code, stderr)
 	}
 
 	for _, want := range []string{
@@ -121,8 +117,8 @@ func TestAuthLoginCustomProfileName(t *testing.T) {
 	srv := newAuthTestServer(t, "myws.slack.com", "T1")
 	stubSlackClientFactory(t, srv)
 
-	if _, err := runAuthLoginForTest(t, strings.NewReader("xoxp-abc\ncustomname\n")); err != nil {
-		t.Fatalf("runAuthLoginForTest() error = %v", err)
+	if stderr, code := runAuthLoginForTest(t, strings.NewReader("xoxp-abc\ncustomname\n")); code != 0 {
+		t.Fatalf("runAuthLoginForTest() exit code = %d, stderr = %s", code, stderr)
 	}
 
 	f, err := config.Load()
@@ -140,12 +136,14 @@ func TestAuthLoginRejectsNonUserToken(t *testing.T) {
 	// call, so the factory must stay untouched.
 	called := noSlackClientFactory(t)
 
-	_, err := runAuthLoginForTest(t, strings.NewReader("xoxb-bot-token\n"))
-	if err == nil {
-		t.Fatal("runAuthLoginForTest() error = nil, want error")
+	stderr, code := runAuthLoginForTest(t, strings.NewReader("xoxb-bot-token\n"))
+	if code == 0 {
+		t.Fatal("runAuthLoginForTest() exit code = 0, want a failure")
 	}
-	if !strings.Contains(err.Error(), "xoxp-") {
-		t.Errorf("error = %v, want mention of xoxp- prefix", err)
+	// errorLine rather than the whole stream: the prompt names the xoxp-
+	// prefix too, so a match against stderr would pass without the report.
+	if got := errorLine(t, stderr); !strings.Contains(got, "xoxp-") {
+		t.Errorf("reported %q, want mention of xoxp- prefix", got)
 	}
 	if called.Load() {
 		t.Error("slackClientFactory was called for a rejected token")
@@ -182,12 +180,12 @@ func TestAuthLoginRejectsNonTTYStdin(t *testing.T) {
 
 	called := noSlackClientFactory(t)
 
-	_, err = runAuthLoginForTest(t, r)
-	if err == nil {
-		t.Fatal("runAuthLoginForTest() error = nil, want error")
+	stderr, code := runAuthLoginForTest(t, r)
+	if code == 0 {
+		t.Fatal("runAuthLoginForTest() exit code = 0, want a failure")
 	}
-	if !strings.Contains(err.Error(), "SLIO_TOKEN") {
-		t.Errorf("error = %v, want it to point at SLIO_TOKEN", err)
+	if got := errorLine(t, stderr); !strings.Contains(got, "SLIO_TOKEN") {
+		t.Errorf("reported %q, want it to point at SLIO_TOKEN", got)
 	}
 	if called.Load() {
 		t.Error("slackClientFactory was called without a terminal")
@@ -210,9 +208,8 @@ func TestAuthLoginAuthTestFailureDoesNotSave(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	_, err := runAuthLoginForTest(t, strings.NewReader("xoxp-bad\n"))
-	if err == nil {
-		t.Fatal("runAuthLoginForTest() error = nil, want error")
+	if _, code := runAuthLoginForTest(t, strings.NewReader("xoxp-bad\n")); code == 0 {
+		t.Fatal("runAuthLoginForTest() exit code = 0, want a failure")
 	}
 
 	f, err := config.Load()
@@ -239,9 +236,9 @@ func TestAuthLoginReRegisterSameWorkspaceConfirmed(t *testing.T) {
 		t.Fatalf("seed config Save() error = %v", err)
 	}
 
-	stderr, err := runAuthLoginForTest(t, strings.NewReader("xoxp-new\ny\n"))
-	if err != nil {
-		t.Fatalf("runAuthLoginForTest() error = %v, stderr = %s", err, stderr)
+	stderr, code := runAuthLoginForTest(t, strings.NewReader("xoxp-new\ny\n"))
+	if code != 0 {
+		t.Fatalf("runAuthLoginForTest() exit code = %d, stderr = %s", code, stderr)
 	}
 	if !strings.Contains(stderr, "Overwrite the stored token?") {
 		t.Errorf("stderr = %q, want the overwrite confirmation prompt", stderr)
@@ -275,9 +272,9 @@ func TestAuthLoginReRegisterSameWorkspaceDeclined(t *testing.T) {
 		t.Fatalf("seed config Save() error = %v", err)
 	}
 
-	stderr, err := runAuthLoginForTest(t, strings.NewReader("xoxp-new\nn\n"))
-	if err != nil {
-		t.Fatalf("runAuthLoginForTest() error = %v, stderr = %s", err, stderr)
+	stderr, code := runAuthLoginForTest(t, strings.NewReader("xoxp-new\nn\n"))
+	if code != 0 {
+		t.Fatalf("runAuthLoginForTest() exit code = %d, stderr = %s", code, stderr)
 	}
 	if !strings.Contains(stderr, "Aborted") {
 		t.Errorf("stderr = %q, want mention of Aborted", stderr)

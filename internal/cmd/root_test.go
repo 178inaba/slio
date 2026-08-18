@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -23,12 +24,12 @@ import (
 func TestInvalidFormatIsRejected(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	_, _, err := runSlio(t, "channel", "list", "--format", "yaml")
-	if err == nil {
-		t.Fatal("slio channel list --format yaml: error = nil, want error for an unsupported --format")
+	_, stderr, code := runSlio(t, "channel", "list", "--format", "yaml")
+	if code == 0 {
+		t.Fatal("slio channel list --format yaml: exit code = 0, want a failure for an unsupported --format")
 	}
-	if !strings.Contains(err.Error(), `invalid --format "yaml"`) {
-		t.Errorf("error = %v, want it to report an invalid --format", err)
+	if got := errorLine(t, stderr); !strings.Contains(got, `invalid --format "yaml"`) {
+		t.Errorf("reported %q, want it to report an invalid --format", got)
 	}
 }
 
@@ -37,7 +38,7 @@ func TestInvalidFormatIsRejected(t *testing.T) {
 // type word comes from format.Format.Type, and the default from the value
 // addFormatFlag seeds before registering the flag.
 func TestFormatFlagHelpLine(t *testing.T) {
-	root := newRootCmd(&globalFlags{})
+	root := newRootCmd(&globalFlags{}, &unknownCommand{})
 
 	thread, _, err := root.Find([]string{"thread"})
 	if err != nil {
@@ -84,7 +85,7 @@ func TestFormatFlagRegistration(t *testing.T) {
 			walk(sub)
 		}
 	}
-	for _, cmd := range newRootCmd(&globalFlags{}).Commands() {
+	for _, cmd := range newRootCmd(&globalFlags{}, &unknownCommand{}).Commands() {
 		walk(cmd)
 	}
 
@@ -100,12 +101,281 @@ func TestFormatFlagRegistration(t *testing.T) {
 func TestFormatFlagIsUnknownWhereItDoesNothing(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	_, _, err := runSlio(t, "auth", "login", "--format", "json")
-	if err == nil {
-		t.Fatal("slio auth login --format json: error = nil, want an unknown flag error")
+	_, stderr, code := runSlio(t, "auth", "login", "--format", "json")
+	if code == 0 {
+		t.Fatal("slio auth login --format json: exit code = 0, want an unknown flag failure")
 	}
-	if !strings.Contains(err.Error(), "unknown flag: --format") {
-		t.Errorf("error = %v, want it to report an unknown --format flag", err)
+	if got := errorLine(t, stderr); !strings.Contains(got, "unknown flag: --format") {
+		t.Errorf("reported %q, want it to report an unknown --format flag", got)
+	}
+}
+
+// TestHelpCommandUnknownTopicFails covers the half of the `help` command
+// slio owns rather than inherits: a topic that resolves to nothing is a
+// failed invocation, not a note printed on the way to exiting 0.
+func TestHelpCommandUnknownTopicFails(t *testing.T) {
+	stdout, stderr, code := runSlio(t, "help", "bogus")
+	if code != 1 {
+		t.Fatalf("slio help bogus: exit code = %d, want 1", code)
+	}
+	if got := errorLine(t, stderr); !strings.Contains(got, `unknown help topic "bogus"`) {
+		t.Errorf("reported %q, want it to name the topic", got)
+	}
+	// The help text cobra would have printed here is the reason this case
+	// is worth a test: it used to land on the stream reserved for data.
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+}
+
+// TestHelpCommandResolvesTopics pins what the replacement kept from cobra's
+// own help command, so the failure case above cannot be bought by breaking
+// the ordinary ones.
+//
+// These rows also cover the `help` command against the help-function
+// override: its RunE calls Help(), which resolves to the override, and only
+// an empty argument list carries them past it to the default rendering.
+func TestHelpCommandResolvesTopics(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantHelp string
+	}{
+		{name: "no topic is the root's own help", args: []string{"help"}, wantHelp: "slio fetches Slack threads"},
+		{name: "a group", args: []string{"help", "auth"}, wantHelp: "Manage authentication"},
+		{name: "a runnable command", args: []string{"help", "channel", "list"}, wantHelp: "List channels visible"},
+		// Find stops at the deepest command it recognises, so the leftover
+		// argument leaves the topic resolved rather than unknown.
+		{name: "a trailing unknown argument keeps the topic", args: []string{"help", "auth", "bogus"}, wantHelp: "Manage authentication"},
+		{name: "the help command itself", args: []string{"help", "help"}, wantHelp: "Help provides help for any command"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, stderr, code := runSlio(t, tt.args...)
+			if code != 0 {
+				t.Fatalf("slio %s: exit code = %d, stderr = %s", strings.Join(tt.args, " "), code, stderr)
+			}
+			if !strings.Contains(stdout, tt.wantHelp) {
+				t.Errorf("stdout = %q, want it to contain %q", stdout, tt.wantHelp)
+			}
+			if stderr != "" {
+				t.Errorf("stderr = %q, want empty", stderr)
+			}
+		})
+	}
+}
+
+// groupCommands are the commands that carry subcommands and nothing else.
+// `completion` is cobra's, generated while executing rather than built by
+// newRootCmd, which is why the fix has to reach the whole tree instead of
+// setting a field on each of slio's own constructors.
+var groupCommands = []string{"auth", "channel", "profile", "completion"}
+
+// TestUnknownSubcommandUnderGroupIsReported covers the case cobra answers
+// with a help request rather than an error: the command has no Run, so
+// Command.execute returns flag.ErrHelp before it ever validates the
+// arguments. Left alone that prints help to stdout and exits 0, which an
+// agent branching on the exit code cannot tell from success.
+func TestUnknownSubcommandUnderGroupIsReported(t *testing.T) {
+	for _, group := range groupCommands {
+		t.Run(group, func(t *testing.T) {
+			stdout, stderr, code := runSlio(t, group, "bogus")
+			if code != 1 {
+				t.Errorf("slio %s bogus: exit code = %d, want 1", group, code)
+			}
+			want := fmt.Sprintf(`Error: unknown command "bogus" for "slio %s"`, group)
+			if got := errorLine(t, stderr); got != want {
+				t.Errorf("reported %q, want %q", got, want)
+			}
+			if stdout != "" {
+				t.Errorf("stdout = %q, want empty", stdout)
+			}
+		})
+	}
+}
+
+// TestUnknownSubcommandSuggestsNearMatch covers the half of the message a
+// test built on `bogus` alone never reaches: nothing is close enough to
+// `bogus` to be suggested, so only a real typo exercises the candidates.
+func TestUnknownSubcommandSuggestsNearMatch(t *testing.T) {
+	_, stderr, code := runSlio(t, "channel", "lsit")
+	if code != 1 {
+		t.Errorf("slio channel lsit: exit code = %d, want 1", code)
+	}
+	want := `Error: unknown command "lsit" for "slio channel"`
+	if got := errorLine(t, stderr); got != want {
+		t.Errorf("reported %q, want %q", got, want)
+	}
+	if !strings.Contains(stderr, "Did you mean this?") || !strings.Contains(stderr, "list") {
+		t.Errorf("stderr = %q, want it to suggest `list`", stderr)
+	}
+}
+
+// TestGroupHelpArgumentSuggestsTheFlag covers `help` as an argument to a
+// group. cobra only ever suggests registered subcommands, and `help` is
+// registered on the root alone, so the flag has to be offered explicitly.
+func TestGroupHelpArgumentSuggestsTheFlag(t *testing.T) {
+	for _, group := range groupCommands {
+		t.Run(group, func(t *testing.T) {
+			stdout, stderr, code := runSlio(t, group, "help")
+			if code != 1 {
+				t.Errorf("slio %s help: exit code = %d, want 1", group, code)
+			}
+			want := fmt.Sprintf(`Error: unknown command "help" for "slio %s"`, group)
+			if got := errorLine(t, stderr); got != want {
+				t.Errorf("reported %q, want %q", got, want)
+			}
+			if !strings.Contains(stderr, "--help") {
+				t.Errorf("stderr = %q, want it to suggest --help", stderr)
+			}
+			if stdout != "" {
+				t.Errorf("stdout = %q, want empty", stdout)
+			}
+		})
+	}
+}
+
+// TestHelpRequestsAreUnaffected is the other side of the override: every way
+// of actually asking for help still prints it to stdout and succeeds. The
+// `help` command has its own rows in TestHelpCommandResolvesTopics, which
+// assert the rendered text rather than just its shape.
+func TestHelpRequestsAreUnaffected(t *testing.T) {
+	argLists := [][]string{{}, {"--help"}}
+	for _, group := range groupCommands {
+		argLists = append(argLists, []string{group}, []string{group, "--help"})
+	}
+
+	for _, args := range argLists {
+		t.Run("slio "+strings.Join(args, " "), func(t *testing.T) {
+			stdout, stderr, code := runSlio(t, args...)
+			if code != 0 {
+				t.Errorf("exit code = %d, want 0; stderr = %s", code, stderr)
+			}
+			if !strings.Contains(stdout, "Usage:") {
+				t.Errorf("stdout = %q, want the help text", stdout)
+			}
+			if stderr != "" {
+				t.Errorf("stderr = %q, want empty", stderr)
+			}
+		})
+	}
+}
+
+// TestUnknownCommandAtRootIsUnchanged guards the case cobra already reports
+// itself, through legacyArgs. The override must not take it over, or the
+// message would change shape.
+func TestUnknownCommandAtRootIsUnchanged(t *testing.T) {
+	stdout, stderr, code := runSlio(t, "bogus")
+	if code != 1 {
+		t.Errorf("slio bogus: exit code = %d, want 1", code)
+	}
+	want := `Error: unknown command "bogus" for "slio"`
+	if got := errorLine(t, stderr); got != want {
+		t.Errorf("reported %q, want %q", got, want)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+}
+
+// TestUnknownArgumentAfterDashDashIsReported covers the one path that
+// reaches the override on the root itself: stripFlags stops at `--`, so
+// what follows never reaches legacyArgs and the root falls through to the
+// same help request the groups do. Every other case here goes through a
+// group, so a guard narrowing the override to commands with a parent would
+// leave them all green while returning these two to exit 0.
+func TestUnknownArgumentAfterDashDashIsReported(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "at the root",
+			args: []string{"--", "bogus"},
+			want: `Error: unknown command "bogus" for "slio"`,
+		},
+		{
+			name: "under a group",
+			args: []string{"auth", "--", "bogus"},
+			want: `Error: unknown command "bogus" for "slio auth"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, stderr, code := runSlio(t, tt.args...)
+			if code != 1 {
+				t.Errorf("slio %s: exit code = %d, want 1", strings.Join(tt.args, " "), code)
+			}
+			if got := errorLine(t, stderr); got != tt.want {
+				t.Errorf("reported %q, want %q", got, tt.want)
+			}
+			if stdout != "" {
+				t.Errorf("stdout = %q, want empty", stdout)
+			}
+		})
+	}
+}
+
+// TestRunnableCommandsStillValidateArgs guards the commands that never took
+// this path: they have a Run, so Command.execute reaches ValidateArgs and
+// reports a bad argument list itself. The override must leave them there.
+func TestRunnableCommandsStillValidateArgs(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		wantContain string
+	}{
+		{
+			name:        "too many arguments",
+			args:        []string{"channel", "list", "bogus"},
+			wantContain: `unknown command "bogus" for "slio channel list"`,
+		},
+		{
+			name:        "too few arguments",
+			args:        []string{"profile", "use"},
+			wantContain: "accepts 1 arg",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+			_, stderr, code := runSlio(t, tt.args...)
+			if code != 1 {
+				t.Errorf("slio %s: exit code = %d, want 1", strings.Join(tt.args, " "), code)
+			}
+			if got := errorLine(t, stderr); !strings.Contains(got, tt.wantContain) {
+				t.Errorf("reported %q, want it to contain %q", got, tt.wantContain)
+			}
+		})
+	}
+}
+
+// TestGroupTypoIsRecordedNotReturned pins the mechanism the rest of these
+// tests only see the result of: cobra returns nil for a mistyped subcommand
+// under a group, so the exit code comes from the recorded failure rather
+// than from an error travelling up. If a future cobra started returning one
+// here, everything above would still pass while the message came from a
+// different place entirely.
+func TestGroupTypoIsRecordedNotReturned(t *testing.T) {
+	u := &unknownCommand{}
+	root := newRootCmd(&globalFlags{}, u)
+	// SetArgs is not optional: a root with no argument list falls back to
+	// os.Args[1:], which under `go test` is the test binary's own flags.
+	root.SetArgs([]string{"auth", "bogus"})
+	var out, errOut bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errOut)
+
+	if err := root.Execute(); err != nil {
+		t.Errorf("root.Execute() error = %v, want nil — cobra answers this case as a help request", err)
+	}
+	if !u.reported {
+		t.Error("unknownCommand.reported = false, want the failure recorded")
 	}
 }
 
@@ -120,6 +390,9 @@ func TestClassifyFailure(t *testing.T) {
 		err         error
 		wantCode    int
 		wantContain string
+		// wantNoMessage marks the rows that carry an error but must produce
+		// no message, so nothing is printed twice.
+		wantNoMessage bool
 	}{
 		{name: "success", err: nil, wantCode: 0},
 		{
@@ -134,6 +407,12 @@ func TestClassifyFailure(t *testing.T) {
 			wantCode:    1,
 			wantContain: "channel not found",
 		},
+		{
+			name:          "an unknown command was already reported by the help function",
+			err:           errUnknownCommand,
+			wantCode:      1,
+			wantNoMessage: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -142,7 +421,7 @@ func TestClassifyFailure(t *testing.T) {
 			if code != tt.wantCode {
 				t.Errorf("exit code = %d, want %d", code, tt.wantCode)
 			}
-			if tt.err == nil {
+			if tt.err == nil || tt.wantNoMessage {
 				if got != nil {
 					t.Errorf("error = %v, want nil", got)
 				}
@@ -206,7 +485,7 @@ func TestTimeoutFlagTakesADuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			root, _, _ := newTestRoot(t)
+			root := newRootCmd(&globalFlags{}, &unknownCommand{})
 
 			err := root.ParseFlags([]string{"--timeout", tt.value})
 			if !tt.wantErr {

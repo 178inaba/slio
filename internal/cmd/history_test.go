@@ -24,9 +24,9 @@ func TestRunHistoryByChannelIDOldestToNewestOrder(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	got, _, err := runSlio(t, "history", "C1")
-	if err != nil {
-		t.Fatalf("slio history: %v", err)
+	got, stderr, code := runSlio(t, "history", "C1")
+	if code != 0 {
+		t.Fatalf("slio history: exit code = %d, stderr = %s", code, stderr)
 	}
 
 	oldestIdx := strings.Index(got, "oldest")
@@ -56,9 +56,9 @@ func TestRunHistoryTruncationNoticeLeadsOutput(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	got, _, err := runSlio(t, "history", "C1", "--limit", "2")
-	if err != nil {
-		t.Fatalf("slio history --limit 2: %v", err)
+	got, stderr, code := runSlio(t, "history", "C1", "--limit", "2")
+	if code != 0 {
+		t.Fatalf("slio history --limit 2: exit code = %d, stderr = %s", code, stderr)
 	}
 
 	noticeIdx := strings.Index(got, "older messages omitted")
@@ -88,8 +88,8 @@ func TestRunHistoryByNameResolvesViaCache(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	if _, _, err := runSlio(t, "history", "#general"); err != nil {
-		t.Fatalf("slio history #general: %v", err)
+	if _, stderr, code := runSlio(t, "history", "#general"); code != 0 {
+		t.Fatalf("slio history #general: exit code = %d, stderr = %s", code, stderr)
 	}
 	if historyChannelParam != "C42" {
 		t.Errorf("history channel param = %q, want C42 (resolved from #general)", historyChannelParam)
@@ -108,8 +108,12 @@ func TestRunHistoryUnknownChannelName(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	if _, _, err := runSlio(t, "history", "#nope"); err == nil {
-		t.Fatal("slio history #nope: error = nil, want error for unknown channel name")
+	_, stderr, code := runSlio(t, "history", "#nope")
+	if code == 0 {
+		t.Fatal("slio history #nope: exit code = 0, want a failure for an unknown channel name")
+	}
+	if got := errorLine(t, stderr); !strings.Contains(got, "#nope") {
+		t.Errorf("reported %q, want it to name the channel", got)
 	}
 }
 
@@ -128,9 +132,9 @@ func TestRunHistoryJSONFormatIsValidWithNotice(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	got, _, err := runSlio(t, "history", "C1", "--limit", "1", "--format", "json")
-	if err != nil {
-		t.Fatalf("slio history --format json: %v", err)
+	got, stderr, code := runSlio(t, "history", "C1", "--limit", "1", "--format", "json")
+	if code != 0 {
+		t.Fatalf("slio history --format json: exit code = %d, stderr = %s", code, stderr)
 	}
 
 	var envelope struct {
