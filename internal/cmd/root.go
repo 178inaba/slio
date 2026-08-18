@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"time"
 
 	"github.com/178inaba/slio/internal/format"
@@ -77,61 +76,43 @@ func addFormatFlag(cmd *cobra.Command, outFormat *format.Format) {
 	cmd.Flags().Var(outFormat, "format", `output format: "md" or "json"`)
 }
 
-// Execute runs the root command and returns the process exit code. SIGINT
-// and SIGTERM cancel the command context so in-flight requests stop instead
-// of running to completion after the user has given up on them, and so
-// `auth login` abandons a prompt it is waiting on.
+// Execute runs the root command and returns the process exit code.
+//
+// Nothing here catches SIGINT or SIGTERM. The Go default — terminate by the
+// signal, print nothing — is what an interrupted run should do, so no error
+// unwinds the stack and no failure report can be printed on that path; the
+// property is structural rather than a branch that has to run first. The
+// one place with work to do between the signal and the process ending arms
+// its own guard around it (terminalGuard in auth.go).
 func Execute() int {
-	ctx, stop := signal.NotifyContext(context.Background(), interruptSignals()...)
-	defer stop()
-
 	g := &globalFlags{}
-	err := newRootCmd(g).ExecuteContext(ctx)
+
+	code, err := classifyFailure(newRootCmd(g).Execute(), g.timeout)
 	if err != nil {
-		err = describeContextError(ctx, err, g.timeout)
 		fmt.Fprintln(os.Stderr, "Error:", err)
 	}
-	return exitCode(ctx, err)
+	return code
 }
 
-// describeContextError replaces a bare context error with one that says what
-// to do about it.
+// classifyFailure maps a command failure to the exit code it gets and the
+// message slio prints for it, so an agent can tell "raise --timeout and
+// retry" from "fix the request". The two are decided together because they
+// read the same error: only an expired deadline gets a code and a rewritten
+// message, and everything else keeps its own message and exits 1.
 //
-// The interrupt case is detected from the signal context rather than from
-// the returned error: signal.NotifyContext cancels with a cause, which the
-// transport surfaces instead of context.Canceled, so errors.Is would miss
-// it. The deadline case is the other way round — it comes from a context
-// derived per command, so only the error carries it, and net/http wraps it
-// in a *url.Error that errors.Is sees through.
-func describeContextError(signalCtx context.Context, err error, timeout time.Duration) error {
-	switch {
-	case signalCtx.Err() != nil:
-		return fmt.Errorf("interrupted: %w", err)
-	case errors.Is(err, context.DeadlineExceeded):
-		return fmt.Errorf("timed out after %s: raise the deadline with --timeout (0 disables it): %w",
-			timeout, err)
-	default:
-		return err
-	}
-}
-
-// exitCode maps a failure to one of the three codes the sibling CLIs share,
-// so an agent can tell "raise --timeout and retry" from "fix the request".
-//
-// The interrupt check comes first, in the same order describeContextError
-// uses: describeContextError wraps the original error, so a deadline that
-// expired just as a signal arrived would otherwise be reported as an
-// interrupt but exit 124.
-func exitCode(signalCtx context.Context, err error) int {
+// The deadline comes from a context derived per command, so it is the error
+// that carries it — and net/http wraps it in a *url.Error that errors.Is
+// sees through.
+func classifyFailure(err error, timeout time.Duration) (int, error) {
 	switch {
 	case err == nil:
-		return 0
-	case signalCtx.Err() != nil:
-		return 1
+		return 0, nil
 	case errors.Is(err, context.DeadlineExceeded):
-		return timeoutExitCode
+		return timeoutExitCode, fmt.Errorf(
+			"timed out after %s: raise the deadline with --timeout (0 disables it): %w",
+			timeout, err)
 	default:
-		return 1
+		return 1, err
 	}
 }
 
@@ -149,9 +130,7 @@ func terminalFile(in io.Reader) (*os.File, bool) {
 // commandContext returns a context bound to --timeout. It must be called at
 // the point the first request is about to be issued, not at the top of RunE:
 // `auth login` prompts for credentials first, and starting the clock before
-// those prompts would fail a user who merely types slowly. The prompts
-// still abort on Ctrl-C, because they watch cmd.Context() — the signal
-// context this one derives from — directly.
+// those prompts would fail a user who merely types slowly.
 //
 // A zero timeout means no deadline: context.WithTimeout(ctx, 0) would expire
 // immediately, so that case returns the command's context unchanged.
