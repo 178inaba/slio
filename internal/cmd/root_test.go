@@ -279,6 +279,46 @@ func TestUnknownCommandAtRootIsUnchanged(t *testing.T) {
 	}
 }
 
+// TestUnknownArgumentAfterDashDashIsReported covers the one path that
+// reaches the override on the root itself: stripFlags stops at `--`, so
+// what follows never reaches legacyArgs and the root falls through to the
+// same help request the groups do. Every other case here goes through a
+// group, so a guard narrowing the override to commands with a parent would
+// leave them all green while returning these two to exit 0.
+func TestUnknownArgumentAfterDashDashIsReported(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "at the root",
+			args: []string{"--", "bogus"},
+			want: `Error: unknown command "bogus" for "slio"`,
+		},
+		{
+			name: "under a group",
+			args: []string{"auth", "--", "bogus"},
+			want: `Error: unknown command "bogus" for "slio auth"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, stderr, code := runSlio(t, tt.args...)
+			if code != 1 {
+				t.Errorf("slio %s: exit code = %d, want 1", strings.Join(tt.args, " "), code)
+			}
+			if got := errorLine(t, stderr); got != tt.want {
+				t.Errorf("reported %q, want %q", got, tt.want)
+			}
+			if stdout != "" {
+				t.Errorf("stdout = %q, want empty", stdout)
+			}
+		})
+	}
+}
+
 // TestRunnableCommandsStillValidateArgs guards the commands that never took
 // this path: they have a Run, so Command.execute reaches ValidateArgs and
 // reports a bad argument list itself. The override must leave them there.
