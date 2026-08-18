@@ -87,7 +87,11 @@ func addFormatFlag(cmd *cobra.Command, outFormat *format.Format) {
 func Execute() int {
 	g := &globalFlags{}
 
-	code, err := classifyFailure(newRootCmd(g).Execute(), g.timeout)
+	// Two statements rather than one: g.timeout is only final after flag
+	// parsing, which happens inside Execute, and Go orders function calls
+	// against a plain operand read only by convention, not by spec.
+	err := newRootCmd(g).Execute()
+	code, err := classifyFailure(err, g.timeout)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 	}
