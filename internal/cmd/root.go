@@ -29,7 +29,22 @@ type globalFlags struct {
 	timeout time.Duration
 }
 
-func newRootCmd(g *globalFlags) *cobra.Command {
+// unknownCommand records that a group command was given an argument that is
+// not one of its subcommands. cobra hands that case to the help function and
+// returns no error from Execute, so the failure has to leave the run some
+// other way. It is per-tree rather than package level so that trees built in
+// the same process cannot see each other's runs.
+type unknownCommand struct {
+	reported bool
+}
+
+// errUnknownCommand stands in for the failure unknownCommand recorded. The
+// help function has already written the message, so classifyFailure turns
+// this into the exit code and reports no message of its own; nothing outside
+// the package ever sees it.
+var errUnknownCommand = errors.New("unknown command")
+
+func newRootCmd(g *globalFlags, u *unknownCommand) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "slio",
 		Short: "Read-only Slack CLI for AI coding agents",
@@ -63,7 +78,69 @@ discussions directly instead of relying on pasted screenshots.`,
 		newProfileCmd(),
 	)
 
+	// Captured before SetHelpFunc: afterwards Help() resolves to the
+	// override, so the fall-through has to call this rather than recurse.
+	defaultHelp := cmd.HelpFunc()
+	cmd.SetHelpFunc(func(c *cobra.Command, args []string) {
+		// cobra routes a group command carrying a leftover argument here
+		// instead of reporting it: Command.execute returns flag.ErrHelp for
+		// any command with no Run, before it validates the arguments, and
+		// ExecuteC answers that by printing help and returning nil. Report
+		// it the way the root reports its own unknown command, and record
+		// the failure so Execute can exit non-zero.
+		//
+		// This is registered on the root because HelpFunc walks to the
+		// parent, which makes one registration cover the whole tree — the
+		// only way to reach the completion command cobra generates while
+		// executing. Setting Args on the groups would not do it either: the
+		// Runnable check returns first.
+		if helpRequested, _ := c.Flags().GetBool("help"); helpRequested || c.Runnable() || c.Flags().NArg() == 0 {
+			defaultHelp(c, args)
+			return
+		}
+		reportUnknownCommand(c, c.Flags().Arg(0))
+		u.reported = true
+	})
+
 	return cmd
+}
+
+// reportUnknownCommand writes what cobra writes for an unknown command at
+// the root, for a command below it. The rendering is rebuilt here because
+// cobra keeps its own copy unexported, and matching it keeps a typo reading
+// the same at either depth.
+//
+// No usage listing follows, unlike the equivalent in gh: the root sets
+// SilenceUsage because usage on every failure is noise for the agent
+// consumer, and a root-level typo prints none either.
+func reportUnknownCommand(cmd *cobra.Command, arg string) {
+	var suggestions string
+	if candidates := suggestionsFor(cmd, arg); len(candidates) > 0 {
+		suggestions = "\n\nDid you mean this?\n\t" + strings.Join(candidates, "\n\t") + "\n"
+	}
+	// A single write, so the report reaches stderr exactly once — and stays
+	// off stdout, where the help text it replaces used to land.
+	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Error: unknown command %q for %q%s\n",
+		arg, cmd.CommandPath(), suggestions)
+}
+
+// suggestionsFor lists the subcommands worth offering for an argument that
+// matched none of them.
+func suggestionsFor(cmd *cobra.Command, arg string) []string {
+	// `help` is registered on the root alone, so no group holds one to
+	// match and SuggestionsFor would return nothing. The flag is what the
+	// caller meant.
+	if arg == "help" {
+		return []string{"--help"}
+	}
+	// SuggestionsFor reads the distance as it finds it; cobra fills in this
+	// default only inside the unexported helper it calls itself. Leaving it
+	// at zero would drop every edit-distance candidate — `lsit` would stop
+	// suggesting `list` — and keep only prefix matches.
+	if cmd.SuggestionsMinimumDistance <= 0 {
+		cmd.SuggestionsMinimumDistance = 2
+	}
+	return cmd.SuggestionsFor(arg)
 }
 
 // newHelpCmd builds the `help` command in place of the one cobra generates.
@@ -148,8 +225,9 @@ func addFormatFlag(cmd *cobra.Command, outFormat *format.Format) {
 // its own guard around it (terminalGuard in auth.go).
 func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	g := &globalFlags{}
+	u := &unknownCommand{}
 
-	root := newRootCmd(g)
+	root := newRootCmd(g, u)
 	root.SetArgs(args)
 	root.SetIn(stdin)
 	root.SetOut(stdout)
@@ -159,6 +237,9 @@ func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// parsing, which happens inside Execute, and Go orders function calls
 	// against a plain operand read only by convention, not by spec.
 	err := root.Execute()
+	if err == nil && u.reported {
+		err = errUnknownCommand
+	}
 	code, err := classifyFailure(err, g.timeout)
 	if err != nil {
 		// errcheck's default exclusions match the writer expression, so
@@ -172,7 +253,8 @@ func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 // message slio prints for it, so an agent can tell "raise --timeout and
 // retry" from "fix the request". The two are decided together because they
 // read the same error: only an expired deadline gets a code and a rewritten
-// message, and everything else keeps its own message and exits 1.
+// message, an already-reported failure gets a code and no message at all,
+// and everything else keeps its own message and exits 1.
 //
 // The deadline comes from a context derived per command, so it is the error
 // that carries it — and net/http wraps it in a *url.Error that errors.Is
@@ -181,6 +263,10 @@ func classifyFailure(err error, timeout time.Duration) (int, error) {
 	switch {
 	case err == nil:
 		return 0, nil
+	case errors.Is(err, errUnknownCommand):
+		// The help function wrote the message; returning it here as well
+		// would put a second Error: line on stderr.
+		return 1, nil
 	case errors.Is(err, context.DeadlineExceeded):
 		return timeoutExitCode, fmt.Errorf(
 			"timed out after %s: raise the deadline with --timeout (0 disables it): %w",
