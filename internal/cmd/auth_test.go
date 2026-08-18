@@ -302,6 +302,18 @@ const guardTestFd = 42
 // a loaded CI machine does not trip it.
 const guardEffectTimeout = 10 * time.Second
 
+// selfProcess is the handle a guard test sends its signal through. Sending
+// a real one is what makes the test exercise the registration the guard
+// makes, rather than a channel the test filled itself.
+func selfProcess(t *testing.T) *os.Process {
+	t.Helper()
+	self, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatalf("os.FindProcess() error = %v", err)
+	}
+	return self
+}
+
 // guardRecorder records what the guard did, in order. The guard acts on its
 // own goroutine, so every field is read behind the mutex — except reraised,
 // which is the channel a test waits on, and whose receive also orders the
@@ -372,10 +384,7 @@ func TestTerminalGuardReRaisesAfterRestoring(t *testing.T) {
 		t.Fatalf("interruptSignals() = %v, want %v", got, signals)
 	}
 
-	self, err := os.FindProcess(os.Getpid())
-	if err != nil {
-		t.Fatalf("os.FindProcess() error = %v", err)
-	}
+	self := selfProcess(t)
 
 	for _, sig := range signals {
 		t.Run(sig.String(), func(t *testing.T) {
@@ -426,10 +435,7 @@ func TestTerminalGuardReRaisesAfterRestoring(t *testing.T) {
 // life: once the masked read is over the terminal is unmodified again, and a
 // signal has to reach the process default rather than the guard.
 func TestTerminalGuardDisarmStopsDelivery(t *testing.T) {
-	self, err := os.FindProcess(os.Getpid())
-	if err != nil {
-		t.Fatalf("os.FindProcess() error = %v", err)
-	}
+	self := selfProcess(t)
 
 	var out bytes.Buffer
 	g, rec := newRecordingGuard(&out, &term.State{})
