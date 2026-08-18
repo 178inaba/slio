@@ -77,7 +77,7 @@ Commands write machine-readable output — Markdown, JSON, and the profile and c
 
 `--timeout` sets an overall deadline for the invocation and takes a Go duration (`90s`, `5m`), defaulting to 90 seconds. `--timeout 0` disables the deadline. The deadline covers the requests, not the time you spend at a prompt.
 
-Ctrl-C and `SIGTERM` cancel the in-flight request rather than leaving it to run to completion. At an `slio auth login` prompt they end the command straight away, without writing or changing a profile.
+Ctrl-C and `SIGTERM` are not reported as failures: slio prints nothing and terminates by the signal, so a shell reports `130` for Ctrl-C and `143` for `SIGTERM`, and a Ctrl-C inside a loop over slio invocations ends the loop too. At an `slio auth login` prompt the terminal's echo is restored first, and no profile is written or changed.
 
 Failures print once to stderr as `Error: ...`, and the exit code says which kind it was:
 
@@ -85,7 +85,7 @@ Failures print once to stderr as `Error: ...`, and the exit code says which kind
 | --- | --- |
 | `0` | Success |
 | `124` | The `--timeout` deadline expired — re-run with a longer one (the code follows the GNU `timeout` convention) |
-| `1` | Everything else, including an interrupt |
+| `1` | Everything else |
 
 ## Agent Skill
 

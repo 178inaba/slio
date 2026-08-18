@@ -1,16 +1,16 @@
 package cmd
 
 import (
-	"context"
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/signal"
-	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -18,6 +18,7 @@ import (
 
 	"github.com/178inaba/slio/internal/config"
 	"github.com/178inaba/slio/internal/slackclient"
+	"golang.org/x/term"
 )
 
 func newAuthTestServer(t *testing.T, host, teamID string) *httptest.Server {
@@ -38,11 +39,9 @@ func stubSlackClientFactory(t *testing.T, srv *httptest.Server) *atomic.Bool {
 }
 
 // noSlackClientFactory stubs the factory for runs that must not reach the
-// API at all. It records the call instead of failing on the spot: the
-// command runs in its own goroutine, where t.Fatal would kill the run and
-// surface as runAuthLoginWithContext's timeout rather than as the real
-// cause. The dead address means a call that should not have happened fails
-// instead of panicking, leaving the returned flag to report it.
+// API at all. The dead address means a call that should not have happened
+// fails instead of panicking, leaving the returned flag to report it to the
+// assertions rather than from inside the command.
 func noSlackClientFactory(t *testing.T) *atomic.Bool {
 	t.Helper()
 	return stubSlackClientFactoryAt(t, "http://127.0.0.1:0/")
@@ -60,140 +59,24 @@ func stubSlackClientFactoryAt(t *testing.T, apiURL string) *atomic.Bool {
 	return &called
 }
 
-// commandReturnTimeout bounds how long a test waits for `auth login` to
-// return after an interrupt. An interrupted prompt is meant to end the
-// command at once, so this only ever fires on a regression; it is generous
-// so a loaded CI machine does not trip it.
-const commandReturnTimeout = 10 * time.Second
-
-// runAuthLoginWithContext drives `auth login` with the given context and
-// stdin, and reports what Execute would: the stderr text, the exit code,
-// and the described error. stdout is asserted empty for every caller: the
-// command is interactive only, so nothing it prints belongs on the stream
-// that carries machine-readable output. stdin is an io.Reader rather than a
-// string because the non-TTY case needs a real *os.File.
-//
-// The command runs in a goroutine because an interrupted prompt is supposed
-// to return on its own; called directly, a run that does not would hang the
-// whole package until the test binary panics.
-func runAuthLoginWithContext(t *testing.T, ctx context.Context, stdin io.Reader) (stderr string, exit int, err error) {
+// runAuthLoginForTest drives `auth login` to completion with the given
+// stdin and returns what it wrote to stderr. stdout is asserted empty for
+// every caller: the command is interactive only, so nothing it prints
+// belongs on the stream that carries machine-readable output. stdin is an
+// io.Reader rather than a string because the non-TTY case needs a real
+// *os.File.
+func runAuthLoginForTest(t *testing.T, stdin io.Reader) (string, error) {
 	t.Helper()
 	root, out, errOut := newTestRoot(t)
 	root.SetIn(stdin)
 	root.SetArgs([]string{"auth", "login"})
 
-	done := make(chan error, 1)
-	go func() { done <- root.ExecuteContext(ctx) }()
-
-	select {
-	case err = <-done:
-	case <-time.After(commandReturnTimeout):
-		t.Fatal("the command did not return after the interrupt")
-	}
+	err := root.Execute()
 
 	if out.Len() > 0 {
 		t.Errorf("stdout = %q, want empty", out.String())
 	}
-	// Execute describes the error only when there is one; describing a nil
-	// error would turn a successful run into a failure here.
-	if err != nil {
-		err = describeContextError(ctx, err, defaultTimeout)
-	}
-	return errOut.String(), exitCode(ctx, err), err
-}
-
-// runAuthLoginForTest drives `auth login` to completion with the given
-// stdin and returns what it wrote to stderr.
-func runAuthLoginForTest(t *testing.T, stdin io.Reader) (string, error) {
-	t.Helper()
-	stderr, _, err := runAuthLoginWithContext(t, context.Background(), stdin)
-	return stderr, err
-}
-
-// scriptedStdin serves one answer per Read so a test can pick the prompt
-// the user interrupts. interrupt fires as the read at interruptAt is
-// served; when that read has no answer left — the user pressed Ctrl-C
-// instead of typing — the reader then blocks the way a real terminal read
-// does. Go registers its signal handlers with SA_RESTART, so a signal does
-// not make a pending read return; returning io.EOF here would end the
-// prompt on its own and the command would abort with or without the fix
-// under test.
-type scriptedStdin struct {
-	answers     []string // each ends with "\n"
-	interruptAt int
-	interrupt   func()
-	release     <-chan struct{} // closed by the test, releasing a parked read
-
-	reads int
-}
-
-func (s *scriptedStdin) Read(p []byte) (int, error) {
-	read := s.reads
-	s.reads++
-	if read == s.interruptAt {
-		s.interrupt()
-	}
-	if read < len(s.answers) {
-		return copy(p, s.answers[read]), nil
-	}
-	<-s.release
-	return 0, io.EOF
-}
-
-func newScriptedStdin(t *testing.T, interrupt func(), interruptAt int, answers []string) *scriptedStdin {
-	t.Helper()
-	release := make(chan struct{})
-	t.Cleanup(func() { close(release) })
-	return &scriptedStdin{
-		answers:     answers,
-		interruptAt: interruptAt,
-		interrupt:   interrupt,
-		release:     release,
-	}
-}
-
-// newInterruptedStdin answers the prompts in order and then interrupts at
-// the next one, standing in for a user who presses Ctrl-C instead of typing.
-func newInterruptedStdin(t *testing.T, interrupt func(), answers ...string) *scriptedStdin {
-	t.Helper()
-	return newScriptedStdin(t, interrupt, len(answers), answers)
-}
-
-// newStdinInterruptedWithLastAnswer interrupts as the final answer is
-// served, standing in for a signal that lands in the window between the
-// last prompt and the write.
-func newStdinInterruptedWithLastAnswer(t *testing.T, interrupt func(), answers ...string) *scriptedStdin {
-	t.Helper()
-	return newScriptedStdin(t, interrupt, len(answers)-1, answers)
-}
-
-// assertConfigUnchanged checks that the config file still holds what the
-// test seeded, or was never created when nothing was seeded.
-func assertConfigUnchanged(t *testing.T, seed *config.File) {
-	t.Helper()
-	path, err := config.Path()
-	if err != nil {
-		t.Fatalf("config.Path() error = %v", err)
-	}
-
-	if seed == nil {
-		switch _, err := os.Stat(path); {
-		case err == nil:
-			f, _ := config.Load()
-			t.Errorf("config file exists (profiles = %+v), want it never created", f.Profiles)
-		case !os.IsNotExist(err):
-			t.Fatalf("os.Stat(%s) error = %v", path, err)
-		}
-		return
-	}
-
-	f, err := config.Load()
-	if err != nil {
-		t.Fatalf("config.Load() error = %v", err)
-	}
-	if !reflect.DeepEqual(f, seed) {
-		t.Errorf("config = %+v, want it unchanged at %+v", f, seed)
-	}
+	return errOut.String(), err
 }
 
 func TestAuthLoginRegistersNewProfile(t *testing.T) {
@@ -409,149 +292,184 @@ func TestAuthLoginReRegisterSameWorkspaceDeclined(t *testing.T) {
 	}
 }
 
-// assertInterrupted checks the outcome every interrupted run shares: the
-// command fails, exits 1, and says it was interrupted without dragging in
-// the token-format complaint that an empty prompt answer used to produce.
-func assertInterrupted(t *testing.T, stderr string, exit int, err error) {
+// guardTestFd stands in for the terminal's descriptor. The guard only hands
+// it to its restore function, which these tests stub, so no real descriptor
+// is touched.
+const guardTestFd = 42
+
+// guardEffectTimeout bounds how long a test waits for the guard to act on a
+// signal. It only ever fires on a regression, so it is generous enough that
+// a loaded CI machine does not trip it.
+const guardEffectTimeout = 10 * time.Second
+
+// selfProcess is the handle a guard test sends its signal through. Sending
+// a real one is what makes the test exercise the registration the guard
+// makes, rather than a channel the test filled itself.
+func selfProcess(t *testing.T) *os.Process {
 	t.Helper()
-	if err == nil {
-		t.Fatalf("error = nil, want an interruption; stderr = %s", stderr)
+	self, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatalf("os.FindProcess() error = %v", err)
 	}
-	if exit != 1 {
-		t.Errorf("exit code = %d, want 1", exit)
-	}
-	if !strings.Contains(err.Error(), "interrupted") {
-		t.Errorf("error = %v, want it to read as an interruption", err)
-	}
-	if strings.Contains(err.Error(), "must start with") {
-		t.Errorf("error = %v, want no token-format complaint", err)
-	}
+	return self
 }
 
-// TestAuthLoginInterruptedAtPromptSavesNothing covers Ctrl-C at each prompt.
-// The profile name case is the one that used to save the profile and exit 0:
-// auth.test has already succeeded by then, so nothing downstream noticed
-// that the user had given up.
-func TestAuthLoginInterruptedAtPromptSavesNothing(t *testing.T) {
-	tests := []struct {
-		name    string
-		seed    *config.File
-		answers []string
-		// wantAPICall is false only where the interrupt has to stop the
-		// command before it verifies the token.
-		wantAPICall bool
-	}{
-		{name: "the token prompt"},
-		{name: "the profile name prompt", answers: []string{"xoxp-abc\n"}, wantAPICall: true},
-		{
-			name:        "the overwrite confirmation for the same workspace",
-			wantAPICall: true,
-			seed: &config.File{
-				DefaultProfile: "myws",
-				Profiles: map[string]config.Profile{
-					"myws": {Token: "xoxp-old", Host: "myws.slack.com", TeamID: "T1"},
-				},
-			},
-			answers: []string{"xoxp-new\n"},
-		},
-		{
-			name:        "the overwrite confirmation for a different workspace",
-			wantAPICall: true,
-			seed: &config.File{
-				DefaultProfile: "taken",
-				Profiles: map[string]config.Profile{
-					"taken": {Token: "xoxp-other", Host: "other.slack.com", TeamID: "T2"},
-				},
-			},
-			answers: []string{"xoxp-new\n", "taken\n"},
-		},
-	}
+// guardRecorder records what the guard did, in order. The guard acts on its
+// own goroutine, so every field is read behind the mutex — except reraised,
+// which is the channel a test waits on, and whose receive also orders the
+// writes that came before it.
+type guardRecorder struct {
+	mu           sync.Mutex
+	events       []string
+	resetSignals []os.Signal
+	restoreFd    int
+	restoreState *term.State
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-			if tt.seed != nil {
-				if err := tt.seed.Save(); err != nil {
-					t.Fatalf("seed config Save() error = %v", err)
-				}
-			}
-			srv := newAuthTestServer(t, "myws.slack.com", "T1")
-			called := stubSlackClientFactory(t, srv)
-
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			stderr, exit, err := runAuthLoginWithContext(t, ctx,
-				newInterruptedStdin(t, cancel, tt.answers...))
-			assertInterrupted(t, stderr, exit, err)
-			if called.Load() != tt.wantAPICall {
-				t.Errorf("slackClientFactory called = %v, want %v", called.Load(), tt.wantAPICall)
-			}
-			// A cancelled prompt ends its own line, so Execute's error
-			// message starts on a fresh one instead of continuing it.
-			if !strings.HasSuffix(stderr, "\n") {
-				t.Errorf("stderr = %q, want the cancelled prompt to end its line", stderr)
-			}
-			assertConfigUnchanged(t, tt.seed)
-		})
-	}
+	reraised chan syscall.Signal
 }
 
-// TestAuthLoginInterruptedWithFinalAnswerSavesNothing covers a signal that
-// lands in the window between the last prompt and the write. Which side
-// stops the run is not fixed — readLine's select sees the answer and the
-// cancellation ready at once and picks at random — which is why
-// runAuthLogin checks the context again before saving: without that guard,
-// the runs where the read wins would write the profile.
-func TestAuthLoginInterruptedWithFinalAnswerSavesNothing(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	srv := newAuthTestServer(t, "myws.slack.com", "T1")
-	stubSlackClientFactory(t, srv)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	stderr, exit, err := runAuthLoginWithContext(t, ctx,
-		newStdinInterruptedWithLastAnswer(t, cancel, "xoxp-abc\n", "myws\n"))
-	assertInterrupted(t, stderr, exit, err)
-	assertConfigUnchanged(t, nil)
+func (r *guardRecorder) record(event string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, event)
 }
 
-// TestAuthLoginSignalAtPromptAborts drives the real signals rather than a
-// bare context cancellation, so SIGTERM is covered alongside SIGINT.
-func TestAuthLoginSignalAtPromptAborts(t *testing.T) {
+func (r *guardRecorder) snapshot() (events []string, resetSignals []os.Signal, restoreFd int, restoreState *term.State) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.events), slices.Clone(r.resetSignals), r.restoreFd, r.restoreState
+}
+
+// newRecordingGuard builds a guard whose three process-level effects are
+// recorded instead of performed. Stubbing them is what makes the ordering
+// observable at all: term.Restore needs a real terminal, and the real
+// re-raise ends the process.
+func newRecordingGuard(out io.Writer, state *term.State) (*terminalGuard, *guardRecorder) {
+	rec := &guardRecorder{reraised: make(chan syscall.Signal, 1)}
+
+	g := newTerminalGuard(out, guardTestFd, state)
+	g.reset = func(signals ...os.Signal) {
+		rec.mu.Lock()
+		rec.resetSignals = signals
+		rec.mu.Unlock()
+		rec.record("reset")
+	}
+	g.restore = func(fd int, state *term.State) error {
+		rec.mu.Lock()
+		rec.restoreFd, rec.restoreState = fd, state
+		rec.mu.Unlock()
+		rec.record("restore")
+		return nil
+	}
+	g.reraise = func(sig syscall.Signal) {
+		rec.record("reraise")
+		rec.reraised <- sig
+	}
+	return g, rec
+}
+
+// TestTerminalGuardReRaisesAfterRestoring covers the guard's whole reason to
+// exist: a signal arriving while the terminal is modified has to put the
+// terminal back before the process dies of that signal. The order matters
+// beyond tidiness — resetting the handlers first is what lets a second
+// signal end the process at once instead of queueing behind the clean-up.
+//
+// What the stubs cannot cover — that the real re-raise terminates the
+// process, and that echo survives it — is verified by hand against a PTY.
+func TestTerminalGuardReRaisesAfterRestoring(t *testing.T) {
 	// Pinning the list rather than just iterating it: iterating alone would
-	// still pass if Execute stopped registering SIGTERM.
+	// still pass if the guard stopped registering SIGTERM.
 	signals := []os.Signal{os.Interrupt, syscall.SIGTERM}
 	if got := interruptSignals(); !slices.Equal(got, signals) {
 		t.Fatalf("interruptSignals() = %v, want %v", got, signals)
 	}
 
-	self, err := os.FindProcess(os.Getpid())
-	if err != nil {
-		t.Fatalf("os.FindProcess() error = %v", err)
-	}
+	self := selfProcess(t)
 
 	for _, sig := range signals {
 		t.Run(sig.String(), func(t *testing.T) {
-			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-			srv := newAuthTestServer(t, "myws.slack.com", "T1")
-			stubSlackClientFactory(t, srv)
+			var out bytes.Buffer
+			state := &term.State{}
+			g, rec := newRecordingGuard(&out, state)
 
-			// The same registration Execute makes, so the signal is
-			// handled here instead of terminating the test binary.
-			ctx, stop := signal.NotifyContext(context.Background(), sig)
-			defer stop()
+			disarm := g.arm()
+			t.Cleanup(disarm)
 
-			stdin := newInterruptedStdin(t, func() {
-				if err := self.Signal(sig); err != nil {
-					t.Errorf("sending %v to the test process: %v", sig, err)
-				}
-			}, "xoxp-abc\n")
+			if err := self.Signal(sig); err != nil {
+				t.Fatalf("sending %v to the test process: %v", sig, err)
+			}
 
-			stderr, exit, err := runAuthLoginWithContext(t, ctx, stdin)
-			assertInterrupted(t, stderr, exit, err)
-			assertConfigUnchanged(t, nil)
+			var reraised syscall.Signal
+			select {
+			case reraised = <-rec.reraised:
+			case <-time.After(guardEffectTimeout):
+				t.Fatal("the guard did not re-raise the signal")
+			}
+
+			if reraised != sig {
+				t.Errorf("re-raised %v, want %v", reraised, sig)
+			}
+			events, resetSignals, restoreFd, restoreState := rec.snapshot()
+			if want := []string{"reset", "restore", "reraise"}; !slices.Equal(events, want) {
+				t.Errorf("guard did %v, want %v", events, want)
+			}
+			// Resetting only the signal that arrived would leave the other
+			// one delivered to a channel nobody reads any more.
+			if !slices.Equal(resetSignals, interruptSignals()) {
+				t.Errorf("reset %v, want %v", resetSignals, interruptSignals())
+			}
+			if restoreFd != guardTestFd || restoreState != state {
+				t.Errorf("restored (%d, %p), want (%d, %p)",
+					restoreFd, restoreState, guardTestFd, state)
+			}
+			// Nothing echoes the interrupt with ECHO cleared, so the guard
+			// owes the prompt its closing newline — and nothing else.
+			if got := out.String(); got != "\n" {
+				t.Errorf("guard wrote %q, want a single newline", got)
+			}
 		})
+	}
+}
+
+// TestTerminalGuardDisarmStopsDelivery covers the other end of the guard's
+// life: once the masked read is over the terminal is unmodified again, and a
+// signal has to reach the process default rather than the guard.
+func TestTerminalGuardDisarmStopsDelivery(t *testing.T) {
+	self := selfProcess(t)
+
+	var out bytes.Buffer
+	g, rec := newRecordingGuard(&out, &term.State{})
+	disarm := g.arm()
+
+	// Taking delivery over before disarming: with no handler left, the
+	// signal below would terminate the test binary rather than prove
+	// anything.
+	delivered := make(chan os.Signal, 1)
+	signal.Notify(delivered, os.Interrupt)
+	t.Cleanup(func() { signal.Stop(delivered) })
+
+	disarm()
+
+	if err := self.Signal(os.Interrupt); err != nil {
+		t.Fatalf("sending %v to the test process: %v", os.Interrupt, err)
+	}
+	select {
+	case <-delivered:
+	case <-time.After(guardEffectTimeout):
+		t.Fatal("the signal was never delivered")
+	}
+
+	// A goroutine that has returned leaves nothing to observe directly, so
+	// the proof is that none of the guard's effects run.
+	select {
+	case sig := <-rec.reraised:
+		t.Errorf("the guard re-raised %v after being disarmed", sig)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if events, _, _, _ := rec.snapshot(); len(events) > 0 {
+		t.Errorf("guard did %v after being disarmed, want nothing", events)
+	}
+	if out.Len() > 0 {
+		t.Errorf("guard wrote %q after being disarmed, want nothing", out.String())
 	}
 }

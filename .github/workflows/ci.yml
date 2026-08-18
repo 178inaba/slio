@@ -22,10 +22,15 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      # No separate build step: go test compiles every matched package,
-      # including ones without test files (the root main.go), so a compile
-      # failure there fails this step too.
+      # No separate build step for the host platform: go test compiles every
+      # matched package, including ones without test files (the root
+      # main.go), so a compile failure there fails this step too.
       - run: go test -race ./...
+      # That reasoning stops at files built for another GOOS. Nothing else
+      # compiles the Windows half of the re-raise pair, and go install is
+      # slio's only distribution channel, so a break there would stop
+      # Windows users installing slio at all.
+      - run: GOOS=windows go build ./...
 
   lint:
     name: Lint
