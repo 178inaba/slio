@@ -357,10 +357,10 @@ func TestRunnableCommandsStillValidateArgs(t *testing.T) {
 
 // TestGroupTypoIsRecordedNotReturned pins the mechanism the rest of these
 // tests only see the result of: cobra returns nil for a mistyped subcommand
-// under a group, so the exit code comes from the recorded failure rather
-// than from an error travelling up. If a future cobra started returning one
-// here, everything above would still pass while the message came from a
-// different place entirely.
+// under a group, so the error Execute reports comes from the help function
+// recording it rather than from one travelling up. If a future cobra started
+// returning one here, everything above would still pass while the message
+// came from a different place entirely.
 func TestGroupTypoIsRecordedNotReturned(t *testing.T) {
 	u := &unknownCommand{}
 	root := newRootCmd(&globalFlags{}, u)
@@ -374,8 +374,8 @@ func TestGroupTypoIsRecordedNotReturned(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Errorf("root.Execute() error = %v, want nil — cobra answers this case as a help request", err)
 	}
-	if !u.reported {
-		t.Error("unknownCommand.reported = false, want the failure recorded")
+	if u.err == nil {
+		t.Error("unknownCommand.err = nil, want the failure recorded")
 	}
 }
 
@@ -390,9 +390,6 @@ func TestClassifyFailure(t *testing.T) {
 		err         error
 		wantCode    int
 		wantContain string
-		// wantNoMessage marks the rows that carry an error but must produce
-		// no message, so nothing is printed twice.
-		wantNoMessage bool
 	}{
 		{name: "success", err: nil, wantCode: 0},
 		{
@@ -407,12 +404,6 @@ func TestClassifyFailure(t *testing.T) {
 			wantCode:    1,
 			wantContain: "channel not found",
 		},
-		{
-			name:          "an unknown command was already reported by the help function",
-			err:           errUnknownCommand,
-			wantCode:      1,
-			wantNoMessage: true,
-		},
 	}
 
 	for _, tt := range tests {
@@ -421,7 +412,7 @@ func TestClassifyFailure(t *testing.T) {
 			if code != tt.wantCode {
 				t.Errorf("exit code = %d, want %d", code, tt.wantCode)
 			}
-			if tt.err == nil || tt.wantNoMessage {
+			if tt.err == nil {
 				if got != nil {
 					t.Errorf("error = %v, want nil", got)
 				}
