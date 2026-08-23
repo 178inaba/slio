@@ -19,9 +19,7 @@ const defaultTimeout = 90 * time.Second
 // timeoutExitCode follows the GNU timeout convention.
 const timeoutExitCode = 124
 
-// errorPrefix leads every failure slio reports, as the README promises. It
-// is shared so that the report Execute writes and the one the help function
-// writes cannot drift apart.
+// errorPrefix leads every failure slio reports, as the README promises.
 const errorPrefix = "Error:"
 
 // globalFlags carries the root persistent flag values into each command's
@@ -34,20 +32,16 @@ type globalFlags struct {
 	timeout time.Duration
 }
 
-// unknownCommand records that a group command was given an argument that is
-// not one of its subcommands. cobra hands that case to the help function and
-// returns no error from Execute, so the failure has to leave the run some
-// other way. It is per-tree rather than package level so that trees built in
-// the same process cannot see each other's runs.
+// unknownCommand carries the failure a group command's leftover argument is,
+// from the help function back out to Execute. cobra hands that case to the
+// help function and returns no error from Execute, so the failure has to
+// leave the run some other way. It is per-tree rather than package level so
+// that trees built in the same process cannot see each other's runs.
 type unknownCommand struct {
-	reported bool
+	// err is what the help override built, or nil if it never fired.
+	// Execute prints and classifies it like any other failure.
+	err error
 }
-
-// errUnknownCommand stands in for the failure unknownCommand recorded. The
-// help function has already written the message, so classifyFailure turns
-// this into the exit code and reports no message of its own; nothing outside
-// the package ever sees it.
-var errUnknownCommand = errors.New("unknown command")
 
 func newRootCmd(g *globalFlags, u *unknownCommand) *cobra.Command {
 	cmd := &cobra.Command{
@@ -90,9 +84,9 @@ discussions directly instead of relying on pasted screenshots.`,
 		// cobra routes a group command carrying a leftover argument here
 		// instead of reporting it: Command.execute returns flag.ErrHelp for
 		// any command with no Run, before it validates the arguments, and
-		// ExecuteC answers that by printing help and returning nil. Report
-		// it the way the root reports its own unknown command, and record
-		// the failure so Execute can exit non-zero.
+		// ExecuteC answers that by printing help and returning nil. Build
+		// the error the root builds for its own unknown command and record
+		// it, so Execute reports it and exits non-zero.
 		//
 		// This is registered on the root because HelpFunc walks to the
 		// parent, which makes one registration cover the whole tree — the
@@ -103,14 +97,13 @@ discussions directly instead of relying on pasted screenshots.`,
 			defaultHelp(c, args)
 			return
 		}
-		reportUnknownCommand(c, c.Flags().Arg(0))
-		u.reported = true
+		u.err = unknownCommandError(c, c.Flags().Arg(0))
 	})
 
 	return cmd
 }
 
-// reportUnknownCommand writes what cobra writes for an unknown command at
+// unknownCommandError builds what cobra reports for an unknown command at
 // the root, for a command below it. The rendering is rebuilt here because
 // cobra keeps its own copy unexported, and matching it keeps a typo reading
 // the same at either depth.
@@ -118,15 +111,12 @@ discussions directly instead of relying on pasted screenshots.`,
 // No usage listing follows, unlike the equivalent in gh: the root sets
 // SilenceUsage because usage on every failure is noise for the agent
 // consumer, and a root-level typo prints none either.
-func reportUnknownCommand(cmd *cobra.Command, arg string) {
+func unknownCommandError(cmd *cobra.Command, arg string) error {
 	var suggestions string
 	if candidates := suggestionsFor(cmd, arg); len(candidates) > 0 {
 		suggestions = "\n\nDid you mean this?\n\t" + strings.Join(candidates, "\n\t") + "\n"
 	}
-	// A single write, so the report reaches stderr exactly once — and stays
-	// off stdout, where the help text it replaces used to land.
-	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%s unknown command %q for %q%s\n",
-		errorPrefix, arg, cmd.CommandPath(), suggestions)
+	return fmt.Errorf("unknown command %q for %q%s", arg, cmd.CommandPath(), suggestions)
 }
 
 // suggestionsFor lists the subcommands worth offering for an argument that
@@ -248,11 +238,18 @@ func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// parsing, which happens inside Execute, and Go orders function calls
 	// against a plain operand read only by convention, not by spec.
 	err := root.Execute()
-	if err == nil && u.reported {
-		err = errUnknownCommand
+	// Only now, so a real error still wins: cobra returns nil for a group
+	// command's leftover argument, and that is the one thing a nil return
+	// can still be hiding.
+	if err == nil {
+		err = u.err
 	}
 	code, err := classifyFailure(err, g.timeout)
 	if err != nil {
+		// The single write every failure goes through, so a report reaches
+		// stderr exactly once — and stays off stdout, where the help text
+		// a mistyped subcommand used to print landed.
+		//
 		// errcheck's default exclusions match the writer expression, so
 		// they cover fmt.Fprintln(os.Stderr, …) but not a parameter.
 		_, _ = fmt.Fprintln(stderr, errorPrefix, err)
@@ -264,8 +261,7 @@ func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 // message slio prints for it, so an agent can tell "raise --timeout and
 // retry" from "fix the request". The two are decided together because they
 // read the same error: only an expired deadline gets a code and a rewritten
-// message, an already-reported failure gets a code and no message at all,
-// and everything else keeps its own message and exits 1.
+// message, and everything else keeps its own message and exits 1.
 //
 // The deadline comes from a context derived per command, so it is the error
 // that carries it — and net/http wraps it in a *url.Error that errors.Is
@@ -274,10 +270,6 @@ func classifyFailure(err error, timeout time.Duration) (int, error) {
 	switch {
 	case err == nil:
 		return 0, nil
-	case errors.Is(err, errUnknownCommand):
-		// The help function wrote the message; returning it here as well
-		// would put a second Error: line on stderr.
-		return 1, nil
 	case errors.Is(err, context.DeadlineExceeded):
 		return timeoutExitCode, fmt.Errorf(
 			"timed out after %s: raise the deadline with --timeout (0 disables it): %w",
