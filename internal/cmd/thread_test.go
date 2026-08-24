@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -33,22 +32,20 @@ func seedProfile(t *testing.T, host string) {
 	}
 }
 
-// threadRepliesHandler serves a two-message thread: a parent and one reply.
-func threadRepliesHandler(w http.ResponseWriter, _ *http.Request) {
-	_, _ = fmt.Fprint(w, `{"ok":true,"messages":[`+
-		`{"type":"message","user":"U1","text":"parent message","ts":"1234567890.000001","channel":"C1","reply_count":1},`+
-		`{"type":"message","user":"U1","text":"a reply","ts":"1234567890.000002","channel":"C1"}`+
-		`],"has_more":false,"response_metadata":{"next_cursor":""}}`)
-}
-
-// serveThread stands up a Slack API stub for the two-message thread above.
+// serveThread stands up a Slack API stub serving a two-message thread: a
+// parent ("1234567890.000001") and one reply ("1234567890.000002").
 func serveThread(t *testing.T) {
 	t.Helper()
 	seedProfile(t, "myws.slack.com")
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
-		"conversations.replies": threadRepliesHandler,
+		"conversations.replies": func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = fmt.Fprint(w, `{"ok":true,"messages":[`+
+				`{"type":"message","user":"U1","text":"parent message","ts":"1234567890.000001","channel":"C1","reply_count":1},`+
+				`{"type":"message","user":"U1","text":"a reply","ts":"1234567890.000002","channel":"C1"}`+
+				`],"has_more":false,"response_metadata":{"next_cursor":""}}`)
+		},
 		"users.info": func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = fmt.Fprint(w, `{"ok":true,"user":{"id":"U1","profile":{"display_name":"Alice"}}}`)
 		},
@@ -57,21 +54,15 @@ func serveThread(t *testing.T) {
 	stubSlackClientFactory(t, srv)
 }
 
-// markedTexts reports the message texts whose rendered block carries the
-// linked-message marker, so a test can assert on which message was marked
+// markedBlocks returns the rendered message blocks carrying the
+// linked-message marker, so a test can assert which message was marked
 // without pinning the marker's exact position. It keys off the marker glyph
 // rather than its wording, which the not-found notice also uses.
-func markedTexts(t *testing.T, out string) []string {
-	t.Helper()
+func markedBlocks(out string) []string {
 	var marked []string
 	for _, block := range strings.Split(out, "\n---\n") {
-		if !strings.Contains(block, "🎯") {
-			continue
-		}
-		for _, text := range []string{"parent message", "a reply"} {
-			if strings.Contains(block, text) {
-				marked = append(marked, text)
-			}
+		if strings.Contains(block, "🎯") {
+			marked = append(marked, block)
 		}
 	}
 	return marked
@@ -148,8 +139,8 @@ func TestRunThreadMarksTheReplyAReplyPermalinkPointsAt(t *testing.T) {
 		t.Fatalf("slio thread: exit code = %d, stderr = %s", code, stderr)
 	}
 
-	if marked := markedTexts(t, got); len(marked) != 1 || marked[0] != "a reply" {
-		t.Errorf("marked messages = %q, want only the reply the URL points at; output = %q", marked, got)
+	if marked := markedBlocks(got); len(marked) != 1 || !strings.Contains(marked[0], "a reply") {
+		t.Errorf("marked blocks = %q, want only the reply the URL points at; output = %q", marked, got)
 	}
 }
 
@@ -161,8 +152,8 @@ func TestRunThreadMarksTheParentAParentPermalinkPointsAt(t *testing.T) {
 		t.Fatalf("slio thread: exit code = %d, stderr = %s", code, stderr)
 	}
 
-	if marked := markedTexts(t, got); len(marked) != 1 || marked[0] != "parent message" {
-		t.Errorf("marked messages = %q, want only the parent the URL points at; output = %q", marked, got)
+	if marked := markedBlocks(got); len(marked) != 1 || !strings.Contains(marked[0], "parent message") {
+		t.Errorf("marked blocks = %q, want only the parent the URL points at; output = %q", marked, got)
 	}
 }
 
@@ -176,13 +167,7 @@ func TestRunThreadJSONMarksOnlyTheLinkedMessage(t *testing.T) {
 		t.Fatalf("slio thread --format json: exit code = %d, stderr = %s", code, stderr)
 	}
 
-	var decoded struct {
-		Messages []map[string]any `json:"messages"`
-		Notice   string           `json:"notice"`
-	}
-	if err := json.Unmarshal([]byte(got), &decoded); err != nil {
-		t.Fatalf("unmarshal slio thread output: %v; output = %s", err, got)
-	}
+	decoded := decodeMessagesEnvelope(t, got)
 	if len(decoded.Messages) != 2 {
 		t.Fatalf("messages length = %d, want 2; output = %s", len(decoded.Messages), got)
 	}
@@ -211,8 +196,8 @@ func TestRunThreadMissingTargetNoticesAndSucceeds(t *testing.T) {
 	if !strings.Contains(got, "1234567890.999999") {
 		t.Errorf("output = %q, want a notice naming the ts that was not found", got)
 	}
-	if marked := markedTexts(t, got); len(marked) != 0 {
-		t.Errorf("marked messages = %q, want none when the target is missing", marked)
+	if marked := markedBlocks(got); len(marked) != 0 {
+		t.Errorf("marked blocks = %q, want none when the target is missing", marked)
 	}
 	for _, want := range []string{"parent message", "a reply"} {
 		if !strings.Contains(got, want) {
@@ -231,13 +216,7 @@ func TestRunThreadMissingTargetNoticeReachesJSONEnvelope(t *testing.T) {
 		t.Fatalf("slio thread --format json: exit code = %d, stderr = %s", code, stderr)
 	}
 
-	var decoded struct {
-		Messages []map[string]any `json:"messages"`
-		Notice   string           `json:"notice"`
-	}
-	if err := json.Unmarshal([]byte(got), &decoded); err != nil {
-		t.Fatalf("unmarshal slio thread output: %v; output = %s", err, got)
-	}
+	decoded := decodeMessagesEnvelope(t, got)
 	if !strings.Contains(decoded.Notice, "1234567890.999999") {
 		t.Errorf("notice = %q, want it to name the ts that was not found", decoded.Notice)
 	}
