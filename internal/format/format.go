@@ -109,7 +109,16 @@ type Message struct {
 	// QuotedBlocks holds bot attachment/block text extracted for
 	// rendering as blockquotes.
 	QuotedBlocks []string
+
+	// Linked marks the one message a permalink pointed at, set only by
+	// `thread` (the only command taking a single message's URL).
+	Linked bool
 }
+
+// linkedMarker trails the header line of the message a permalink pointed
+// at. It is a suffix rather than a prefix so the author and time stay where
+// a reader — and a consumer diffing md output — expects them.
+const linkedMarker = " 🎯 _linked message_"
 
 var fencedCodeRe = regexp.MustCompile("(?s)```.*?```")
 
@@ -200,13 +209,21 @@ func unescapeEntities(s string) string {
 // RenderMarkdown renders a single message as a Markdown block.
 func RenderMarkdown(m Message, resolveUser Resolver) string {
 	if m.IsSystem {
-		return fmt.Sprintf("_%s — %s_\n", formatLocalTime(m.Time), RenderText(m.Text, resolveUser))
+		// The marker goes outside the italics wrapping the whole line.
+		line := fmt.Sprintf("_%s — %s_", formatLocalTime(m.Time), RenderText(m.Text, resolveUser))
+		if m.Linked {
+			line += linkedMarker
+		}
+		return line + "\n"
 	}
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "**%s** — %s", m.Author, formatLocalTime(m.Time))
 	if m.Edited {
 		b.WriteString(" (edited)")
+	}
+	if m.Linked {
+		b.WriteString(linkedMarker)
 	}
 	b.WriteString("\n")
 	b.WriteString(RenderText(m.Text, resolveUser))
@@ -269,6 +286,7 @@ type jsonMessage struct {
 	ThreadPermalink string     `json:"thread_permalink,omitempty"`
 	Permalink       string     `json:"permalink,omitempty"`
 	QuotedBlocks    []string   `json:"quoted_blocks,omitempty"`
+	Linked          bool       `json:"linked,omitempty"`
 }
 
 // RenderJSON renders messages, in the order given, as a JSON array. Text
@@ -298,6 +316,7 @@ func RenderJSON(messages []Message, resolveUser Resolver) ([]byte, error) {
 			ThreadPermalink: m.ThreadPermalink,
 			Permalink:       m.Permalink,
 			QuotedBlocks:    quotedBlocks,
+			Linked:          m.Linked,
 		}
 	}
 	return json.MarshalIndent(out, "", "  ")
