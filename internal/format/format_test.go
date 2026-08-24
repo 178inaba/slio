@@ -207,6 +207,47 @@ func TestRenderMarkdownSystemMessageIsOneLine(t *testing.T) {
 	}
 }
 
+func TestRenderMarkdownLinkedMessageMarksHeaderAfterEdited(t *testing.T) {
+	m := Message{
+		Ts:     "1234567890.123456",
+		Time:   time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC),
+		Author: "Alice",
+		Text:   "hello",
+		Edited: true,
+		Linked: true,
+	}
+	got := RenderMarkdown(m, resolverFromMap(nil))
+
+	header := strings.SplitN(got, "\n", 2)[0]
+	// The marker trails the whole header line, so it lands after
+	// "(edited)" rather than between the time and it.
+	if want := "(edited) 🎯 _linked message_"; !strings.HasSuffix(header, want) {
+		t.Errorf("header = %q, want it to end with %q", header, want)
+	}
+
+	m.Linked = false
+	if got := RenderMarkdown(m, resolverFromMap(nil)); strings.Contains(got, "linked message") {
+		t.Errorf("RenderMarkdown() = %q, want no marker on an unlinked message", got)
+	}
+}
+
+func TestRenderMarkdownLinkedSystemMessageMarksOutsideItalics(t *testing.T) {
+	m := Message{
+		Ts:       "1234567890.123456",
+		Time:     time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC),
+		Text:     "Alice has joined the channel",
+		IsSystem: true,
+		Linked:   true,
+	}
+	got := RenderMarkdown(m, resolverFromMap(nil))
+
+	// The system line is itself italicized, so the marker has to close
+	// those italics before starting its own.
+	if want := "Alice has joined the channel_ 🎯 _linked message_"; !strings.Contains(got, want) {
+		t.Errorf("RenderMarkdown() = %q, want it to contain %q", got, want)
+	}
+}
+
 func TestRenderJSONIncludesRawTsAndRendersText(t *testing.T) {
 	messages := []Message{
 		{
@@ -236,6 +277,42 @@ func TestRenderJSONIncludesRawTsAndRendersText(t *testing.T) {
 	}
 	if _, ok := decoded[0]["reactions"]; ok {
 		t.Errorf("reactions key present = %v, want omitted for an empty slice", decoded[0]["reactions"])
+	}
+}
+
+func TestRenderJSONMarksOnlyTheLinkedMessage(t *testing.T) {
+	messages := []Message{
+		{
+			Ts:     "1234567890.123456",
+			Time:   time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC),
+			Text:   "the linked one",
+			Linked: true,
+		},
+		{
+			Ts:   "1234567890.123457",
+			Time: time.Date(2026, 8, 4, 12, 1, 0, 0, time.UTC),
+			Text: "another message",
+		},
+	}
+	data, err := RenderJSON(messages, resolverFromMap(nil))
+	if err != nil {
+		t.Fatalf("RenderJSON() error = %v", err)
+	}
+
+	var decoded []map[string]any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal RenderJSON() output: %v", err)
+	}
+	if len(decoded) != 2 {
+		t.Fatalf("decoded length = %d, want 2", len(decoded))
+	}
+	if decoded[0]["linked"] != true {
+		t.Errorf("linked = %v, want true on the message the permalink points at", decoded[0]["linked"])
+	}
+	// Absence rather than false: every other message's output has to stay
+	// byte-identical to what it was before the field existed.
+	if _, ok := decoded[1]["linked"]; ok {
+		t.Errorf("linked key present = %v, want omitted on an unlinked message", decoded[1]["linked"])
 	}
 }
 

@@ -10,7 +10,10 @@ func TestThreadURLCanonicalPermalink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ThreadURL() error = %v", err)
 	}
-	want := ThreadRef{Host: "myws.slack.com", Channel: "C0123456789", Ts: "1234567890.123456"}
+	want := ThreadRef{
+		Host: "myws.slack.com", Channel: "C0123456789",
+		Ts: "1234567890.123456", TargetTs: "1234567890.123456",
+	}
 	if got != want {
 		t.Errorf("ThreadURL() = %+v, want %+v", got, want)
 	}
@@ -21,7 +24,10 @@ func TestThreadURLReplyPermalinkWithThreadTsAndCid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ThreadURL() error = %v", err)
 	}
-	want := ThreadRef{Host: "myws.slack.com", Channel: "C0123456789", Ts: "1234567890.123456"}
+	want := ThreadRef{
+		Host: "myws.slack.com", Channel: "C0123456789",
+		Ts: "1234567890.123456", TargetTs: "1111111111.222222",
+	}
 	if got != want {
 		t.Errorf("ThreadURL() = %+v, want %+v", got, want)
 	}
@@ -37,6 +43,9 @@ func TestThreadURLReplyPermalinkWithThreadTsOnly(t *testing.T) {
 	}
 	if got.Ts != "1234567890.123456" {
 		t.Errorf("Ts = %q, want the thread_ts value", got.Ts)
+	}
+	if got.TargetTs != "1111111111.222222" {
+		t.Errorf("TargetTs = %q, want the p<digits> ts", got.TargetTs)
 	}
 }
 

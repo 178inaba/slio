@@ -21,18 +21,29 @@ var (
 )
 
 // ThreadRef identifies a single Slack thread: the channel it lives in, its
-// workspace host, and the parent message's timestamp.
+// workspace host, the timestamp to fetch the thread from, and the timestamp
+// of the one message the URL pointed at.
 type ThreadRef struct {
 	Host    string
 	Channel string
-	Ts      string
+	// Ts is the thread to fetch: the parent message's timestamp.
+	Ts string
+	// TargetTs is the timestamp of the message the URL pointed at, taken
+	// from the permalink's p<digits> segment. It equals Ts for a parent
+	// permalink and differs for a reply permalink.
+	TargetTs string
 }
 
 // ThreadURL parses a Slack message permalink into a ThreadRef. It accepts
 // both the canonical form (.../archives/<channel>/p<digits>) and a reply
-// permalink carrying ?thread_ts=<ts>&cid=<channel> — both resolve to the
-// same thread, since conversations.replies fetches the full thread from
-// either the parent's or a reply's ts.
+// permalink carrying ?thread_ts=<ts>&cid=<channel>. The two carry different
+// information and both parts are kept: thread_ts (when present) is the
+// thread to fetch, while the p<digits> segment always names the message the
+// URL pointed at. Passing a reply's ts to conversations.replies would
+// return that reply alone rather than the thread it belongs to — which is
+// also why a reply permalink stripped of its ?thread_ts= (not a form
+// Slack's "Copy link" produces) resolves to that reply alone, leaving it
+// the only message `slio thread` has to mark.
 func ThreadURL(raw string) (ThreadRef, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -47,7 +58,8 @@ func ThreadURL(raw string) (ThreadRef, error) {
 		return ThreadRef{}, fmt.Errorf(
 			"%q is not a Slack message permalink (expected .../archives/<channel>/p<digits>)", raw)
 	}
-	channel, ts := m[1], tsFromPermalinkDigits(m[2])
+	channel, targetTs := m[1], tsFromPermalinkDigits(m[2])
+	ts := targetTs
 
 	if threadTs := u.Query().Get("thread_ts"); threadTs != "" {
 		ts = threadTs
@@ -56,7 +68,7 @@ func ThreadURL(raw string) (ThreadRef, error) {
 		}
 	}
 
-	return ThreadRef{Host: u.Host, Channel: channel, Ts: ts}, nil
+	return ThreadRef{Host: u.Host, Channel: channel, Ts: ts, TargetTs: targetTs}, nil
 }
 
 // tsFromPermalinkDigits converts a permalink's "p<digits>" segment back into

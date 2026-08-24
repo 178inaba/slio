@@ -20,7 +20,15 @@ func newThreadCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "thread <url>",
 		Short: "Fetch a full thread by its Slack message permalink",
-		Args:  cobra.ExactArgs(1),
+		Long: `Fetch a full thread by its Slack message permalink.
+
+The URL also says which message it points at, so that one message is marked
+in the output: a trailing "🎯 _linked message_" on its header line in md, and
+"linked": true in json. A reply permalink marks the reply, a parent
+permalink marks the parent. If the thread carries no message with that
+timestamp — a deleted reply, or a hand-edited URL — the whole thread is
+printed unmarked with a notice, and the command still succeeds.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runThread(cmd, args, g, download, outFormat)
 		},
@@ -67,10 +75,15 @@ func runThread(cmd *cobra.Command, args []string, g *globalFlags, download bool,
 
 	resolver := newUserResolver(ctx, client, store, time.Now())
 	messages := make([]format.Message, 0, len(msgs))
+	var foundTarget bool
 	for _, m := range msgs {
 		fm, err := messageFromMsg(m, host, resolver.resolve, false)
 		if err != nil {
 			return err
+		}
+		if fm.Ts == ref.TargetTs {
+			fm.Linked = true
+			foundTarget = true
 		}
 		if download && len(m.Files) > 0 {
 			files, err := downloadFiles(ctx, client, downloadDir, m.Files)
@@ -85,5 +98,12 @@ func runThread(cmd *cobra.Command, args []string, g *globalFlags, download bool,
 		return err
 	}
 
-	return writeMessages(cmd, outFormat, messages, resolver.resolve, "", "")
+	// A target the thread doesn't carry still leaves the thread itself
+	// worth printing, so this is a notice rather than a failure.
+	var notice string
+	if !foundTarget {
+		notice = fmt.Sprintf("linked message %s not found in this thread — showing all messages unmarked", ref.TargetTs)
+	}
+
+	return writeMessages(cmd, outFormat, messages, resolver.resolve, notice, "")
 }

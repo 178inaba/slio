@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"strings"
 	"testing"
@@ -58,4 +59,23 @@ func errorLine(t *testing.T, stderr string) string {
 		line = line[:end]
 	}
 	return line
+}
+
+// messagesEnvelope mirrors the --format json shape the list-of-messages
+// commands write, decoded generically so a test can assert on individual
+// keys — including their absence, which a typed message struct would hide.
+type messagesEnvelope struct {
+	Messages []map[string]any `json:"messages"`
+	Notice   string           `json:"notice"`
+}
+
+// decodeMessagesEnvelope decodes what a list-of-messages command wrote to
+// stdout, failing the test if it isn't valid JSON in that shape.
+func decodeMessagesEnvelope(t *testing.T, out string) messagesEnvelope {
+	t.Helper()
+	var envelope messagesEnvelope
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+		t.Fatalf("unmarshal output: %v; output = %s", err, out)
+	}
+	return envelope
 }

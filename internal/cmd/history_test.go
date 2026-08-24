@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -137,13 +136,7 @@ func TestRunHistoryJSONFormatIsValidWithNotice(t *testing.T) {
 		t.Fatalf("slio history --format json: exit code = %d, stderr = %s", code, stderr)
 	}
 
-	var envelope struct {
-		Messages []map[string]any `json:"messages"`
-		Notice   string           `json:"notice"`
-	}
-	if err := json.Unmarshal([]byte(got), &envelope); err != nil {
-		t.Fatalf("unmarshal output: %v; output = %s", err, got)
-	}
+	envelope := decodeMessagesEnvelope(t, got)
 	if envelope.Notice == "" {
 		t.Error("Notice is empty, want a truncation notice")
 	}
