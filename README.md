@@ -55,7 +55,7 @@ slio profile list
 slio profile use otherworkspace
 ```
 
-Add `--format json` to any read command for structured output instead of Markdown. Add `--download` to `slio thread` to save attachments locally and print their paths. Run `slio --help` or `slio <command> --help` for the full flag reference.
+Add `--format json` to any read command for structured output instead of Markdown. Add `--download` to `slio thread` to save attachments locally and print their paths. `slio thread` also marks the one message the URL points at — a trailing `🎯 _linked message_` on its header line in Markdown, `"linked": true` in JSON — so a reply permalink pins the reply within the thread it belongs to. Run `slio --help` or `slio <command> --help` for the full flag reference.
 
 ### Multiple workspaces
 

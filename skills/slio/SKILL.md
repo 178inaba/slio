@@ -16,7 +16,8 @@ description: Read Slack threads, channel history, and search results directly fr
 
 ## Operating contract
 
-- **Thread URLs**: pass the URL to `slio thread` exactly as given, including any `?thread_ts=...&cid=...` query string — both permalink forms resolve to the same thread.
+- **Thread URLs**: pass the URL to `slio thread` exactly as given, including any `?thread_ts=...&cid=...` query string — it is what resolves the thread a reply belongs to, and dropping it would return that reply alone.
+- **Which message was linked**: `slio thread` marks the message the URL points at (`🎯 _linked message_` on its header line in Markdown, `"linked": true` in JSON) — use it when the user asks about "this reply" rather than the whole thread. A parent permalink marks the parent. If the thread carries no message with that timestamp (a deleted reply, a hand-edited URL), the output leads with a notice and nothing is marked; the command still succeeds.
 - **Search syntax pass-through**: don't rewrite or simplify the user's query. Slack's own modifiers (`in:#channel`, `from:@user`, `after:`, `before:`, etc.) are passed straight through to Slack's search — use them instead of inventing your own filtering.
 - **Drilling down**: `history`/`search` output includes a thread permalink next to any message with replies — follow up with `slio thread <permalink>` to read the full discussion.
 - **Attachments**: files are shown as metadata (name/type/size) by default. Add `--download` (on `slio thread`) when you need to read an attachment's actual contents; it saves files to a local temp directory and prints their paths so you can read them.
