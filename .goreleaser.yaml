@@ -1,8 +1,7 @@
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 
-# This configuration is shared in shape with the sibling CLIs (cflio, rdsh);
-# the slio-specific values are the Go import path in the ldflags and the
-# cask's name, homepage and description.
+# This configuration is shared in shape with the sibling CLIs (cflio, rdsh),
+# so a change worth making here is usually worth making there too.
 version: 2
 
 builds:

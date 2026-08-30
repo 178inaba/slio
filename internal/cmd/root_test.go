@@ -497,10 +497,7 @@ func TestTimeoutFlagTakesADuration(t *testing.T) {
 }
 
 // buildInfoReader returns a debug.ReadBuildInfo stand-in reporting the given
-// main module version. resolveVersion takes the reader as a parameter for
-// exactly this: a test binary's own build info reads `(devel)`, so calling
-// through to the real one would pin the toolchain's behaviour rather than
-// the fallback under test.
+// main module version.
 func buildInfoReader(mainVersion string) func() (*debug.BuildInfo, bool) {
 	return func() (*debug.BuildInfo, bool) {
 		return &debug.BuildInfo{Main: debug.Module{Version: mainVersion}}, true
@@ -509,8 +506,8 @@ func buildInfoReader(mainVersion string) func() (*debug.BuildInfo, bool) {
 
 // TestResolveVersion covers the sources --version can be answered from, in
 // the order they are tried: the string GoReleaser embeds, the module version
-// the toolchain recorded, and the `unknown` floor. The floor is what keeps
-// the flag registered at all — cobra skips it for an empty Version.
+// the toolchain recorded, and the unknownVersion floor — which the last two
+// rows pin because it is load-bearing, for the reason its own comment gives.
 func TestResolveVersion(t *testing.T) {
 	noBuildInfo := func() (*debug.BuildInfo, bool) { return nil, false }
 

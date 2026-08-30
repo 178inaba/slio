@@ -53,7 +53,10 @@ jobs:
         id: tagpr
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+      # Gated like the step it serves: most pushes to main only refresh the
+      # release pull request, and nothing else here needs a toolchain.
       - uses: actions/setup-go@v7
+        if: steps.tagpr.outputs.tag != ''
         with:
           go-version-file: go.mod
       # Same job as tagpr rather than a second workflow on the tag: a tag
