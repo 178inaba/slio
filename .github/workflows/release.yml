@@ -9,6 +9,11 @@ on:
 # race on the release pull request. Unlike CI this never cancels a run in
 # progress — the second half of this job publishes a release, and killing it
 # midway would leave a tag with no artifacts behind it.
+#
+# Only one run waits, though, so a third push replaces the one queued behind
+# the running job. tagpr tags only when HEAD is the release pull request's
+# merge commit, so if the replaced run was that merge, no tag is created:
+# re-run it and it releases from the same commit.
 concurrency:
   group: ${{ github.workflow }}
 
