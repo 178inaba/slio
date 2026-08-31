@@ -26,6 +26,8 @@ archives:
       - goos: windows
         formats: [zip]
 
+# The release workflow names this file as the attestation subject, and a
+# rename that misses it fails only after the release is already published.
 checksum:
   name_template: checksums.txt
 
