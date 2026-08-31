@@ -50,7 +50,7 @@ func TestRunSearchTrailingMoreResultsNotice(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
-		"search.messages": func(w http.ResponseWriter, r *http.Request) {
+		"search.messages": func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = fmt.Fprint(w, `{"ok":true,"messages":{"matches":[`+
 				`{"text":"hi","ts":"1.000001","permalink":"https://myws.slack.com/archives/C1/p1000001"}`+
 				`],"total":5,"pagination":{"page_count":1}}}`)

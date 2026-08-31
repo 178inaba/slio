@@ -151,7 +151,7 @@ func TestBuildThreadPermalink(t *testing.T) {
 func TestUserResolverPropagatesDeadlineExceeded(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = fmt.Fprint(w, `{"ok":true,"user":{"id":"U1","profile":{"display_name":"Alice"}}}`)
 	}))
 	t.Cleanup(srv.Close)
@@ -178,7 +178,7 @@ func TestUserResolverPropagatesDeadlineExceeded(t *testing.T) {
 func TestUserResolverDoesNotRecordOrdinaryLookupFailure(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = fmt.Fprint(w, `{"ok":false,"error":"user_not_found"}`)
 	}))
 	t.Cleanup(srv.Close)

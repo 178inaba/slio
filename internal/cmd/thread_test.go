@@ -107,12 +107,12 @@ func TestRunThreadDownloadSavesAttachmentAndPrintsPath(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stubSlackClientFactory(t, srv)
 
-	mux.HandleFunc("/conversations.replies", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/conversations.replies", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = fmt.Fprintf(w, `{"ok":true,"messages":[{"type":"message","user":"U1","text":"hi","ts":"1234567890.000001","channel":"C1",`+
 			`"files":[{"id":"F1","name":"report.txt","filetype":"text","size":13,"url_private":"%s/files-pri/T1-F1/report.txt"}]}],"has_more":false}`,
 			srv.URL)
 	})
-	mux.HandleFunc("/files-pri/T1-F1/report.txt", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/files-pri/T1-F1/report.txt", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = fmt.Fprint(w, "file contents")
 	})
