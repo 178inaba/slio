@@ -17,7 +17,7 @@ concurrency:
 # contents stays read: the checkout only reads, and tagpr and GoReleaser
 # authenticate as the GitHub App below rather than with the workflow's own
 # token. The writes are what actions/attest requires for the attestation
-# step, the one step that does use that token.
+# step, the one step that writes with that token.
 permissions:
   contents: read
   id-token: write
