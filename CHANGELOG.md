@@ -1,5 +1,9 @@
 # Changelog
 
+## [v1.0.1](https://github.com/178inaba/slio/compare/v1.0.0...v1.0.1) - 2026-08-31
+
+- Attest the release archives with build provenance and move the App token to client-id by @178inaba in https://github.com/178inaba/slio/pull/42
+
 ## [v0.0.1](https://github.com/178inaba/slio/commits/v0.0.1) - 2026-08-31
 
 - Implement the initial read-only Slack CLI (auth / profile / thread / history / search / channel list) by @178inaba in https://github.com/178inaba/slio/pull/2
