@@ -8,12 +8,9 @@ on:
 # Two pushes to main must not run two tagpr instances at once: they would
 # race on the release pull request. Unlike CI this never cancels a run in
 # progress — the second half of this job publishes a release, and killing it
-# midway would leave a tag with no artifacts behind it.
-#
-# Only one run waits, though, so a third push replaces the one queued behind
-# the running job. tagpr tags only when HEAD is the release pull request's
-# merge commit, so if the replaced run was that merge, no tag is created:
-# re-run it and it releases from the same commit.
+# midway would leave a tag with no artifacts behind it. Only one run waits,
+# so if a third push replaces the release pull request's merge, re-run that
+# run to release from the same commit.
 concurrency:
   group: ${{ github.workflow }}
 
@@ -24,23 +21,20 @@ permissions:
   contents: read
 
 jobs:
+  # No `needs:` on the CI job: the release pull request's contents were
+  # already tested on the pull request itself.
   release:
     name: Release
     runs-on: ubuntu-latest
     steps:
-      # This job does not wait for CI on the merge commit: the release pull
-      # request's contents were already tested on the pull request itself.
       - uses: actions/checkout@v7
         with:
-          # tagpr reads the history since the last tag to build the
-          # changelog, and GoReleaser needs the tags to resolve the version.
+          # tagpr needs the history since the last tag; GoReleaser, the tags.
           fetch-depth: 0
           # Without this, checkout leaves its own credentials in
-          # http.<host>.extraheader, and tagpr — which only installs the App
-          # token when that setting is absent — would push the tag as the
-          # default GITHUB_TOKEN. That fails outright under the read-only
-          # permissions above, and would authenticate as the wrong identity
-          # even with write.
+          # http.<host>.extraheader, and tagpr — which installs the App
+          # token only when that setting is absent — would push the tag as
+          # the default GITHUB_TOKEN, which the permissions above reject.
           persist-credentials: false
       # A GitHub App rather than the default GITHUB_TOKEN: GITHUB_TOKEN
       # cannot push to the tap repository, and a pull request it opens gets
@@ -52,22 +46,19 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           owner: 178inaba
           repositories: slio,homebrew-tap
-      # Keeps the release pull request up to date on an ordinary push, and
-      # creates the tag on the push that merges it.
+      # Refreshes the release pull request; tags the push that merges it.
       - uses: Songmu/tagpr@v1
         id: tagpr
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-      # Gated like the step it serves: most pushes to main only refresh the
-      # release pull request, and nothing else here needs a toolchain.
+      # Gated like the step it serves: most pushes release nothing.
       - uses: actions/setup-go@v7
         if: steps.tagpr.outputs.tag != ''
         with:
           go-version-file: go.mod
       # Same job as tagpr rather than a second workflow on the tag: a tag
-      # pushed from a workflow does not reliably start another one, and
-      # gating on the tag output avoids the question. tagpr creates the tag
-      # locally before pushing it, so it is already on HEAD here.
+      # pushed from a workflow does not reliably start another one. tagpr
+      # creates the tag locally before pushing, so it is on HEAD here.
       - uses: goreleaser/goreleaser-action@v7
         if: steps.tagpr.outputs.tag != ''
         with:

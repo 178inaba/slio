@@ -23,30 +23,25 @@ const timeoutExitCode = 124
 // errorPrefix leads every failure slio reports, as the README promises.
 const errorPrefix = "Error:"
 
-// unknownVersion is what --version reports when nothing recorded one. It
-// exists so resolveVersion never answers with the empty string: cobra skips
-// InitDefaultVersionFlag for an empty Version, which would drop --version
-// from a binary built in some way nobody anticipated rather than print a
-// vague answer.
+// unknownVersion is the floor --version falls back to, and the reason
+// resolveVersion never answers with the empty string: cobra registers no
+// version flag at all for an empty Version, so a build nobody anticipated
+// would lose the flag rather than print a vague answer.
 const unknownVersion = "unknown"
 
 // version is the release version, injected at link time by GoReleaser with
-// -X github.com/178inaba/slio/internal/cmd.version={{.Version}}. It is the
-// one package-level variable in this package: an -ldflags target has to be
-// one, and unlike the command and flag state kept out of package scope, it
-// is a build-time constant in everything but the type system.
+// -X github.com/178inaba/slio/internal/cmd.version={{.Version}}. An
+// -ldflags target has to be a package-level variable, which is why this one
+// is, against the rule the rest of the package follows.
 var version string
 
-// resolveVersion reports the version --version prints, from the first of
-// three sources that has one: the string GoReleaser embedded, the module
-// version the toolchain recorded (`v1.2.3` for `go install …@v1.2.3`,
-// `(devel)` or a VCS pseudo-version for a local `go build`), and finally
-// unknownVersion.
+// resolveVersion reports the version --version prints. The fallback source
+// is the module version the toolchain recorded: `v1.2.3` for `go install
+// …@v1.2.3`, `(devel)` or a VCS pseudo-version for a local `go build`.
 //
-// The build info arrives through a parameter rather than a direct
-// debug.ReadBuildInfo call so that a test can drive every source: a test
-// binary carries build info of its own, which would decide the fallback
-// rows for us.
+// It takes the build info through a parameter rather than calling
+// debug.ReadBuildInfo itself so that a test can drive every source; a test
+// binary carries build info of its own.
 func resolveVersion(embedded string, readBuildInfo func() (*debug.BuildInfo, bool)) string {
 	if embedded == "" {
 		info, ok := readBuildInfo()
@@ -88,8 +83,7 @@ func newRootCmd(g *globalFlags, u *unknownCommand) *cobra.Command {
 		Long: `slio fetches Slack threads, channel history, and search results as
 AI-readable Markdown (or JSON), so an AI coding agent can read Slack
 discussions directly instead of relying on pasted screenshots.`,
-		// Setting this is what registers --version, through cobra's
-		// InitDefaultVersionFlag. It also takes the free -v shorthand.
+		// cobra registers --version from this, and takes the free -v too.
 		Version: resolveVersion(version, debug.ReadBuildInfo),
 		// Errors are printed once in Execute; the default behavior would
 		// print usage and the error again on every runtime failure, which
@@ -226,14 +220,11 @@ Simply type slio help [path to command] for full details.`,
 			// Both flags are registered lazily while executing, so a
 			// command reached this way has to be given them before its help
 			// is rendered, or the listing would omit them. Seeding the
-			// version flag is what keeps `slio help` matching `slio
-			// --help`; on a subcommand it is a no-op, because
-			// InitDefaultVersionFlag returns early where Version is empty
-			// and only the root carries one — which is also why `slio help
-			// <command>` keeps matching `slio <command> --help`.
+			// version flag is a no-op below the root, which is what keeps
+			// `slio help <command>` matching `slio <command> --help`.
 			//
-			// cobra's version also passes its context down. That is still
-			// not carried over: the help templates read no context.
+			// cobra's version also passes its context down; that is still
+			// not carried over, because the help templates read no context.
 			target.InitDefaultHelpFlag()
 			target.InitDefaultVersionFlag()
 			return target.Help()
