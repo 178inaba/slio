@@ -17,7 +17,7 @@ func TestRunChannelListMarkdown(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
-		"users.conversations": func(w http.ResponseWriter, r *http.Request) {
+		"users.conversations": func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C1","name":"general"},{"id":"C2","name":"random"}]}`)
 		},
 	}))
@@ -39,7 +39,7 @@ func TestRunChannelListJSON(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
-		"users.conversations": func(w http.ResponseWriter, r *http.Request) {
+		"users.conversations": func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C1","name":"general"}]}`)
 		},
 	}))
@@ -65,7 +65,7 @@ func TestRunChannelListPopulatesCacheForNameResolution(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
-		"users.conversations": func(w http.ResponseWriter, r *http.Request) {
+		"users.conversations": func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C1","name":"general"}]}`)
 		},
 	}))

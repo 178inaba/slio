@@ -1,3 +1,5 @@
+// Command slio is the entry point for the slio CLI; the command tree and
+// everything it does live in internal/cmd.
 package main
 
 import (

@@ -43,7 +43,7 @@ func newHistoryCmd(g *globalFlags) *cobra.Command {
 }
 
 func runHistory(cmd *cobra.Command, args []string, g *globalFlags, limit int, since, until string, outFormat format.Format) error {
-	chArg, err := parse.ParseChannelArg(args[0])
+	chArg, err := parse.ChannelArg(args[0])
 	if err != nil {
 		return err
 	}
@@ -123,11 +123,11 @@ func parseTimeFlag(name, raw string, now time.Time) (string, error) {
 	if raw == "" {
 		return "", nil
 	}
-	t, err := parse.ParseTime(raw, now)
+	t, err := parse.Time(raw, now)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", name, err)
 	}
-	return format.FormatTs(t), nil
+	return format.Ts(t), nil
 }
 
 // resolveChannelID resolves a "#name" channel argument to a channel ID via

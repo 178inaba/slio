@@ -88,9 +88,9 @@ type Channel struct {
 	Name string
 }
 
-// ParseChannelArg parses the argument to `slio history`: a Slack URL, a
+// ChannelArg parses the argument to `slio history`: a Slack URL, a
 // bare channel/DM/group-DM ID, or a "#name" reference.
-func ParseChannelArg(raw string) (Channel, error) {
+func ChannelArg(raw string) (Channel, error) {
 	switch {
 	case strings.HasPrefix(raw, "http://"), strings.HasPrefix(raw, "https://"):
 		u, err := url.Parse(raw)
@@ -136,12 +136,12 @@ var (
 	}
 )
 
-// ParseTime parses a --since/--until value relative to now: ISO 8601 (with
+// Time parses a --since/--until value relative to now: ISO 8601 (with
 // or without a time-of-day component; no zone means now's location) or a
 // relative duration meaning "that long before now" (30m, 24h, 7d, 2w). Go's
 // time.ParseDuration doesn't support d/w, so only those two units are
 // hand-rolled; everything else is delegated to it.
-func ParseTime(raw string, now time.Time) (time.Time, error) {
+func Time(raw string, now time.Time) (time.Time, error) {
 	if m := relativeDurationRe.FindStringSubmatch(raw); m != nil {
 		n, err := strconv.Atoi(m[1])
 		if err != nil {

@@ -13,7 +13,7 @@ func TestRunHistoryByChannelIDOldestToNewestOrder(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
-		"conversations.history": func(w http.ResponseWriter, r *http.Request) {
+		"conversations.history": func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = fmt.Fprint(w, `{"ok":true,"messages":[`+
 				`{"type":"message","text":"newest","ts":"1.000002"},`+
 				`{"type":"message","text":"oldest","ts":"1.000001"}`+
@@ -40,7 +40,7 @@ func TestRunHistoryTruncationNoticeLeadsOutput(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
-		"conversations.history": func(w http.ResponseWriter, r *http.Request) {
+		"conversations.history": func(w http.ResponseWriter, _ *http.Request) {
 			// limit+1 (3) messages in one page, has_more:false: the API
 			// happened to have exactly that many on hand, and it's up to
 			// ConversationHistory to notice len(all) > limit and report
@@ -76,7 +76,7 @@ func TestRunHistoryByNameResolvesViaCache(t *testing.T) {
 
 	var historyChannelParam string
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
-		"users.conversations": func(w http.ResponseWriter, r *http.Request) {
+		"users.conversations": func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C42","name":"general"}]}`)
 		},
 		"conversations.history": func(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +100,7 @@ func TestRunHistoryUnknownChannelName(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
-		"users.conversations": func(w http.ResponseWriter, r *http.Request) {
+		"users.conversations": func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C42","name":"general"}]}`)
 		},
 	}))
@@ -121,7 +121,7 @@ func TestRunHistoryJSONFormatIsValidWithNotice(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
-		"conversations.history": func(w http.ResponseWriter, r *http.Request) {
+		"conversations.history": func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = fmt.Fprint(w, `{"ok":true,"messages":[`+
 				`{"type":"message","text":"a","ts":"1.000002"},`+
 				`{"type":"message","text":"b","ts":"1.000001"}`+

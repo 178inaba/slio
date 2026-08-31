@@ -337,8 +337,8 @@ func withRetry(ctx context.Context, fn func() error) error {
 	for {
 		err := fn()
 
-		var rlErr *slack.RateLimitedError
-		if !errors.As(err, &rlErr) {
+		rlErr, ok := errors.AsType[*slack.RateLimitedError](err)
+		if !ok {
 			return err
 		}
 

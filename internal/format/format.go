@@ -340,9 +340,9 @@ func ParseTs(ts string) (time.Time, error) {
 	return time.Unix(secs, micros*1000), nil
 }
 
-// FormatTs converts a time.Time to a Slack ts string, for use as the
+// Ts converts a time.Time to a Slack ts string, for use as the
 // oldest/latest API parameters.
-func FormatTs(t time.Time) string {
+func Ts(t time.Time) string {
 	return fmt.Sprintf("%d.%06d", t.Unix(), t.Nanosecond()/1000)
 }
 

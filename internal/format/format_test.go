@@ -218,7 +218,7 @@ func TestRenderMarkdownLinkedMessageMarksHeaderAfterEdited(t *testing.T) {
 	}
 	got := RenderMarkdown(m, resolverFromMap(nil))
 
-	header := strings.SplitN(got, "\n", 2)[0]
+	header, _, _ := strings.Cut(got, "\n")
 	// The marker trails the whole header line, so it lands after
 	// "(edited)" rather than between the time and it.
 	if want := "(edited) 🎯 _linked message_"; !strings.HasSuffix(header, want) {
@@ -358,14 +358,14 @@ func TestRenderMarkdownRendersQuotedBlocks(t *testing.T) {
 	}
 }
 
-func TestParseTsAndFormatTsRoundTrip(t *testing.T) {
+func TestTsRoundTripsWithParseTs(t *testing.T) {
 	const ts = "1234567890.123456"
 	tm, err := ParseTs(ts)
 	if err != nil {
 		t.Fatalf("ParseTs() error = %v", err)
 	}
-	if got := FormatTs(tm); got != ts {
-		t.Errorf("FormatTs(ParseTs(%q)) = %q, want %q", ts, got, ts)
+	if got := Ts(tm); got != ts {
+		t.Errorf("Ts(ParseTs(%q)) = %q, want %q", ts, got, ts)
 	}
 }
 

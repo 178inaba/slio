@@ -21,11 +21,11 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 }
 
 func TestAuthTestSuccess(t *testing.T) {
-	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = fmt.Fprint(w, `{"ok":true,"url":"https://myws.slack.com/","team":"My WS","user":"grace","team_id":"T123","user_id":"U123"}`)
 	})
 
-	got, err := c.AuthTest(context.Background())
+	got, err := c.AuthTest(t.Context())
 	if err != nil {
 		t.Fatalf("AuthTest() error = %v", err)
 	}
@@ -38,25 +38,25 @@ func TestAuthTestSuccess(t *testing.T) {
 }
 
 func TestAuthTestNonRetryableError(t *testing.T) {
-	var calls int32
-	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&calls, 1)
+	var calls atomic.Int32
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
 		_, _ = fmt.Fprint(w, `{"ok":false,"error":"invalid_auth"}`)
 	})
 
-	_, err := c.AuthTest(context.Background())
+	_, err := c.AuthTest(t.Context())
 	if err == nil {
 		t.Fatal("AuthTest() error = nil, want error")
 	}
-	if got := atomic.LoadInt32(&calls); got != 1 {
+	if got := calls.Load(); got != 1 {
 		t.Errorf("calls = %d, want 1 (no retry on non-rate-limit error)", got)
 	}
 }
 
 func TestAuthTestRetriesOn429ThenSucceeds(t *testing.T) {
-	var calls int32
-	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&calls, 1)
+	var calls atomic.Int32
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		n := calls.Add(1)
 		if n == 1 {
 			w.Header().Set("Retry-After", "0")
 			w.WriteHeader(http.StatusTooManyRequests)
@@ -66,22 +66,22 @@ func TestAuthTestRetriesOn429ThenSucceeds(t *testing.T) {
 		_, _ = fmt.Fprint(w, `{"ok":true,"url":"https://myws.slack.com/","team_id":"T123"}`)
 	})
 
-	got, err := c.AuthTest(context.Background())
+	got, err := c.AuthTest(t.Context())
 	if err != nil {
 		t.Fatalf("AuthTest() error = %v", err)
 	}
 	if got.Host != "myws.slack.com" {
 		t.Errorf("Host = %q, want myws.slack.com", got.Host)
 	}
-	if calls := atomic.LoadInt32(&calls); calls != 2 {
-		t.Errorf("calls = %d, want 2 (one 429 then a retry)", calls)
+	if n := calls.Load(); n != 2 {
+		t.Errorf("calls = %d, want 2 (one 429 then a retry)", n)
 	}
 }
 
 func TestConversationRepliesFollowsPagination(t *testing.T) {
-	var calls int32
-	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&calls, 1)
+	var calls atomic.Int32
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		n := calls.Add(1)
 		if n == 1 {
 			_, _ = fmt.Fprint(w, `{"ok":true,"messages":[{"type":"message","user":"U1","text":"parent","ts":"1234567890.000001"}],`+
 				`"has_more":true,"response_metadata":{"next_cursor":"cursor1"}}`)
@@ -91,7 +91,7 @@ func TestConversationRepliesFollowsPagination(t *testing.T) {
 			`"has_more":false,"response_metadata":{"next_cursor":""}}`)
 	})
 
-	msgs, err := c.ConversationReplies(context.Background(), "C1", "1234567890.000001")
+	msgs, err := c.ConversationReplies(t.Context(), "C1", "1234567890.000001")
 	if err != nil {
 		t.Fatalf("ConversationReplies() error = %v", err)
 	}
@@ -101,17 +101,17 @@ func TestConversationRepliesFollowsPagination(t *testing.T) {
 	if msgs[0].Text != "parent" || msgs[1].Text != "reply" {
 		t.Errorf("msgs = %+v, want [parent reply]", msgs)
 	}
-	if calls := atomic.LoadInt32(&calls); calls != 2 {
-		t.Errorf("calls = %d, want 2 (one page then a follow-up)", calls)
+	if got := calls.Load(); got != 2 {
+		t.Errorf("calls = %d, want 2 (one page then a follow-up)", got)
 	}
 }
 
 func TestGetUserInfoSuccess(t *testing.T) {
-	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = fmt.Fprint(w, `{"ok":true,"user":{"id":"U1","name":"alice","real_name":"Alice Example","profile":{"display_name":"Alice"}}}`)
 	})
 
-	got, err := c.GetUserInfo(context.Background(), "U1")
+	got, err := c.GetUserInfo(t.Context(), "U1")
 	if err != nil {
 		t.Fatalf("GetUserInfo() error = %v", err)
 	}
@@ -121,11 +121,11 @@ func TestGetUserInfoSuccess(t *testing.T) {
 }
 
 func TestConversationHistoryNoTruncation(t *testing.T) {
-	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = fmt.Fprint(w, `{"ok":true,"messages":[{"type":"message","text":"a","ts":"1.000001"},{"type":"message","text":"b","ts":"1.000002"}],"has_more":false}`)
 	})
 
-	msgs, hasMore, err := c.ConversationHistory(context.Background(), "C1", "", "", 5)
+	msgs, hasMore, err := c.ConversationHistory(t.Context(), "C1", "", "", 5)
 	if err != nil {
 		t.Fatalf("ConversationHistory() error = %v", err)
 	}
@@ -138,9 +138,9 @@ func TestConversationHistoryNoTruncation(t *testing.T) {
 }
 
 func TestConversationHistoryTruncatesAndReportsHasMore(t *testing.T) {
-	var calls int32
-	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&calls, 1)
+	var calls atomic.Int32
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		n := calls.Add(1)
 		if n == 1 {
 			_, _ = fmt.Fprint(w, `{"ok":true,"messages":[{"type":"message","text":"a","ts":"1.000001"},{"type":"message","text":"b","ts":"1.000002"}],`+
 				`"has_more":true,"response_metadata":{"next_cursor":"cursor1"}}`)
@@ -149,7 +149,7 @@ func TestConversationHistoryTruncatesAndReportsHasMore(t *testing.T) {
 		_, _ = fmt.Fprint(w, `{"ok":true,"messages":[{"type":"message","text":"c","ts":"1.000003"}],"has_more":false}`)
 	})
 
-	msgs, hasMore, err := c.ConversationHistory(context.Background(), "C1", "", "", 2)
+	msgs, hasMore, err := c.ConversationHistory(t.Context(), "C1", "", "", 2)
 	if err != nil {
 		t.Fatalf("ConversationHistory() error = %v", err)
 	}
@@ -168,7 +168,7 @@ func TestConversationHistoryClampsPerPageLimitTo999(t *testing.T) {
 		_, _ = fmt.Fprint(w, `{"ok":true,"messages":[{"type":"message","text":"a","ts":"1.000001"}],"has_more":false}`)
 	})
 
-	if _, _, err := c.ConversationHistory(context.Background(), "C1", "", "", 2000); err != nil {
+	if _, _, err := c.ConversationHistory(t.Context(), "C1", "", "", 2000); err != nil {
 		t.Fatalf("ConversationHistory() error = %v", err)
 	}
 	if gotLimit != "999" {
@@ -177,9 +177,9 @@ func TestConversationHistoryClampsPerPageLimitTo999(t *testing.T) {
 }
 
 func TestConversationsForUserFollowsPagination(t *testing.T) {
-	var calls int32
-	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&calls, 1)
+	var calls atomic.Int32
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		n := calls.Add(1)
 		if n == 1 {
 			_, _ = fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C1","name":"general"}],"response_metadata":{"next_cursor":"cursor1"}}`)
 			return
@@ -187,7 +187,7 @@ func TestConversationsForUserFollowsPagination(t *testing.T) {
 		_, _ = fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C2","name":"random"}],"response_metadata":{"next_cursor":""}}`)
 	})
 
-	channels, err := c.ConversationsForUser(context.Background())
+	channels, err := c.ConversationsForUser(t.Context())
 	if err != nil {
 		t.Fatalf("ConversationsForUser() error = %v", err)
 	}
@@ -197,11 +197,11 @@ func TestConversationsForUserFollowsPagination(t *testing.T) {
 }
 
 func TestSearchMessagesReturnsMatchesAndTotal(t *testing.T) {
-	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = fmt.Fprint(w, `{"ok":true,"messages":{"matches":[{"text":"hello","ts":"1.000001","permalink":"https://myws.slack.com/archives/C1/p1000001"}],"total":1}}`)
 	})
 
-	matches, total, err := c.SearchMessages(context.Background(), "hello", 20)
+	matches, total, err := c.SearchMessages(t.Context(), "hello", 20)
 	if err != nil {
 		t.Fatalf("SearchMessages() error = %v", err)
 	}
@@ -228,7 +228,7 @@ func TestSearchMessagesKeepsPageSizeFixedAcrossPages(t *testing.T) {
 		_, _ = fmt.Fprint(w, `{"ok":true,"messages":{"matches":[{"text":"b","ts":"1.000002"}],"total":150,"pagination":{"page_count":2}}}`)
 	})
 
-	_, total, err := c.SearchMessages(context.Background(), "hello", 150)
+	_, total, err := c.SearchMessages(t.Context(), "hello", 150)
 	if err != nil {
 		t.Fatalf("SearchMessages() error = %v", err)
 	}
@@ -256,7 +256,7 @@ func TestDownloadFileSuccess(t *testing.T) {
 	c := New("xoxp-test")
 
 	dest := filepath.Join(t.TempDir(), "sub", "report.txt")
-	if err := c.DownloadFile(context.Background(), srv.URL+"/files-pri/T1-F1/report.txt", dest); err != nil {
+	if err := c.DownloadFile(t.Context(), srv.URL+"/files-pri/T1-F1/report.txt", dest); err != nil {
 		t.Fatalf("DownloadFile() error = %v", err)
 	}
 
@@ -273,7 +273,7 @@ func TestDownloadFileSuccess(t *testing.T) {
 }
 
 func TestDownloadFileDetectsSignInHTML(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = fmt.Fprint(w, "<!DOCTYPE html><html>sign in</html>")
 	}))
@@ -281,7 +281,7 @@ func TestDownloadFileDetectsSignInHTML(t *testing.T) {
 	c := New("xoxp-test")
 
 	dest := filepath.Join(t.TempDir(), "report.txt")
-	err := c.DownloadFile(context.Background(), srv.URL+"/files-pri/T1-F1/report.txt", dest)
+	err := c.DownloadFile(t.Context(), srv.URL+"/files-pri/T1-F1/report.txt", dest)
 	if err == nil {
 		t.Fatal("DownloadFile() error = nil, want error for an HTML sign-in response")
 	}
@@ -294,9 +294,9 @@ func TestDownloadFileDetectsSignInHTML(t *testing.T) {
 }
 
 func TestDownloadFileRetriesOn429ThenSucceeds(t *testing.T) {
-	var calls int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if atomic.AddInt32(&calls, 1) == 1 {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
 			w.Header().Set("Retry-After", "0")
 			w.WriteHeader(http.StatusTooManyRequests)
 			return
@@ -308,22 +308,22 @@ func TestDownloadFileRetriesOn429ThenSucceeds(t *testing.T) {
 	c := New("xoxp-test")
 
 	dest := filepath.Join(t.TempDir(), "report.txt")
-	if err := c.DownloadFile(context.Background(), srv.URL+"/files-pri/T1-F1/report.txt", dest); err != nil {
+	if err := c.DownloadFile(t.Context(), srv.URL+"/files-pri/T1-F1/report.txt", dest); err != nil {
 		t.Fatalf("DownloadFile() error = %v", err)
 	}
-	if got := atomic.LoadInt32(&calls); got != 2 {
+	if got := calls.Load(); got != 2 {
 		t.Errorf("calls = %d, want 2 (one 429 then a retry)", got)
 	}
 }
 
 func TestAuthTestDeadlineExceededWhileRateLimited(t *testing.T) {
-	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Retry-After", "5")
 		w.WriteHeader(http.StatusTooManyRequests)
 		_, _ = fmt.Fprint(w, `{"ok":false,"error":"ratelimited"}`)
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()
 
 	_, err := c.AuthTest(ctx)

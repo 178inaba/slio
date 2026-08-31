@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -21,7 +20,7 @@ func TestResolveWorkspaceViaSlioToken(t *testing.T) {
 	srv := newAuthTestServer(t, "myws.slack.com", "T1")
 	stubSlackClientFactory(t, srv)
 
-	creds, host, cacheKey, err := resolveWorkspace(context.Background(), "", "")
+	creds, host, cacheKey, err := resolveWorkspace(t.Context(), "", "")
 	if err != nil {
 		t.Fatalf("resolveWorkspace() error = %v", err)
 	}
@@ -42,12 +41,12 @@ func TestResolveWorkspaceViaProfileDoesNotCallAuthTest(t *testing.T) {
 
 	orig := slackClientFactory
 	t.Cleanup(func() { slackClientFactory = orig })
-	slackClientFactory = func(token string) *slackclient.Client {
+	slackClientFactory = func(_ string) *slackclient.Client {
 		t.Fatal("slackClientFactory should not be called when a profile resolves the credentials")
 		return nil
 	}
 
-	_, host, cacheKey, err := resolveWorkspace(context.Background(), "", "")
+	_, host, cacheKey, err := resolveWorkspace(t.Context(), "", "")
 	if err != nil {
 		t.Fatalf("resolveWorkspace() error = %v", err)
 	}
@@ -62,10 +61,10 @@ func TestRunHistoryViaSlioTokenIncludesThreadPermalink(t *testing.T) {
 	t.Setenv("SLIO_TOKEN", "xoxp-env-token")
 
 	srv := httptest.NewServer(newSlackAPIMux(map[string]http.HandlerFunc{
-		"auth.test": func(w http.ResponseWriter, r *http.Request) {
+		"auth.test": func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = fmt.Fprint(w, `{"ok":true,"url":"https://myws.slack.com/","team_id":"T1"}`)
 		},
-		"conversations.history": func(w http.ResponseWriter, r *http.Request) {
+		"conversations.history": func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = fmt.Fprint(w, `{"ok":true,"messages":[{"type":"message","text":"hi","ts":"1.000001",`+
 				`"channel":"C1","reply_count":2}],"has_more":false}`)
 		},
