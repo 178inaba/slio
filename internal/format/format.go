@@ -1,12 +1,15 @@
 // Package format renders slio's normalized Message model as either
-// AI-readable Markdown or JSON. It performs no I/O: display names and
-// mention resolution are supplied by the caller via Resolver, which is
-// typically backed by internal/cache and users.info.
+// AI-readable Markdown or JSON, onto a writer the caller supplies. It
+// reaches nothing else — no network, no disk: display names and mention
+// resolution arrive through Resolver, which is typically backed by
+// internal/cache and users.info.
 package format
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -34,7 +37,7 @@ func (f *Format) Set(s string) error {
 		*f = v
 		return nil
 	}
-	return UnsupportedError(Format(s))
+	return unsupportedError(Format(s))
 }
 
 // Type names the value shown in the --format help line. It reports "string"
@@ -43,11 +46,11 @@ func (f *Format) Set(s string) error {
 // strings; see CLAUDE.md.
 func (Format) Type() string { return "string" }
 
-// UnsupportedError is shared by Set and by the callers that switch on a
+// unsupportedError is shared by Set and by the callers that switch on a
 // Format: a Format converted from an arbitrary string still type-checks, so
 // a switch cannot assume its value went through Set. Keeping one constructor
 // means the accepted values are listed in one place.
-func UnsupportedError(f Format) error {
+func unsupportedError(f Format) error {
 	return fmt.Errorf("invalid --format %q: must be %q or %q", f, Markdown, JSON)
 }
 
@@ -87,7 +90,7 @@ type Message struct {
 	// username/bot_profile.name; formatting treats both the same.
 	Author string
 
-	// Text is the raw mrkdwn message body, transformed by RenderText.
+	// Text is the raw mrkdwn message body, transformed by renderText.
 	Text string
 
 	Edited bool
@@ -122,14 +125,14 @@ const linkedMarker = " 🎯 _linked message_"
 
 var fencedCodeRe = regexp.MustCompile("(?s)```.*?```")
 
-// RenderText converts Slack mrkdwn to GitHub-flavored Markdown: mentions,
+// renderText converts Slack mrkdwn to GitHub-flavored Markdown: mentions,
 // channel/subteam references, and `<url|text>` links are expanded (via
 // resolveUser for user mentions), *bold*/~strike~ become **bold**/~~strike~~,
 // and HTML entities are unescaped. Fenced code blocks are left untouched
 // (aside from entity unescaping) so their contents render exactly as
 // written; _italic_ and quote lines already match GitHub Markdown, so they
 // pass through unchanged.
-func RenderText(raw string, resolveUser Resolver) string {
+func renderText(raw string, resolveUser Resolver) string {
 	var b strings.Builder
 	last := 0
 	for _, loc := range fencedCodeRe.FindAllStringIndex(raw, -1) {
@@ -206,11 +209,11 @@ func unescapeEntities(s string) string {
 	return s
 }
 
-// RenderMarkdown renders a single message as a Markdown block.
-func RenderMarkdown(m Message, resolveUser Resolver) string {
+// renderMarkdown renders a single message as a Markdown block.
+func renderMarkdown(m Message, resolveUser Resolver) string {
 	if m.IsSystem {
 		// The marker goes outside the italics wrapping the whole line.
-		line := fmt.Sprintf("_%s — %s_", formatLocalTime(m.Time), RenderText(m.Text, resolveUser))
+		line := fmt.Sprintf("_%s — %s_", formatLocalTime(m.Time), renderText(m.Text, resolveUser))
 		if m.Linked {
 			line += linkedMarker
 		}
@@ -226,11 +229,11 @@ func RenderMarkdown(m Message, resolveUser Resolver) string {
 		b.WriteString(linkedMarker)
 	}
 	b.WriteString("\n")
-	b.WriteString(RenderText(m.Text, resolveUser))
+	b.WriteString(renderText(m.Text, resolveUser))
 	b.WriteString("\n")
 
 	for _, block := range m.QuotedBlocks {
-		rendered := RenderText(block, resolveUser)
+		rendered := renderText(block, resolveUser)
 		b.WriteString("\n> ")
 		b.WriteString(strings.ReplaceAll(strings.TrimRight(rendered, "\n"), "\n", "\n> "))
 		b.WriteString("\n")
@@ -262,52 +265,78 @@ func RenderMarkdown(m Message, resolveUser Resolver) string {
 	return b.String()
 }
 
-// RenderMarkdownList renders a slice of messages, in the order given, as
+// renderMarkdownList renders a slice of messages, in the order given, as
 // Markdown separated by horizontal rules.
-func RenderMarkdownList(messages []Message, resolveUser Resolver) string {
+func renderMarkdownList(messages []Message, resolveUser Resolver) string {
 	parts := make([]string, len(messages))
 	for i, m := range messages {
-		parts[i] = RenderMarkdown(m, resolveUser)
+		parts[i] = renderMarkdown(m, resolveUser)
 	}
 	return strings.Join(parts, "\n---\n\n")
 }
 
 // jsonMessage is the --format json representation of a single message.
+// The two omit options are not interchangeable here. "omitempty" drops a
+// field whose JSON form is empty — "", [] — which is what the strings and
+// lists want. It keeps a false or a 0, though, because neither is empty
+// JSON, so the flags and the count ask for "omitzero" instead: absent
+// rather than false is what tells a consumer the flag doesn't apply.
 type jsonMessage struct {
 	Ts              string     `json:"ts"`
 	Time            time.Time  `json:"time"`
 	Author          string     `json:"author,omitempty"`
 	Text            string     `json:"text"`
-	Edited          bool       `json:"edited,omitempty"`
-	IsSystem        bool       `json:"is_system,omitempty"`
+	Edited          bool       `json:"edited,omitzero"`
+	IsSystem        bool       `json:"is_system,omitzero"`
 	Reactions       []Reaction `json:"reactions,omitempty"`
 	Files           []FileInfo `json:"files,omitempty"`
-	ReplyCount      int        `json:"reply_count,omitempty"`
+	ReplyCount      int        `json:"reply_count,omitzero"`
 	ThreadPermalink string     `json:"thread_permalink,omitempty"`
 	Permalink       string     `json:"permalink,omitempty"`
 	QuotedBlocks    []string   `json:"quoted_blocks,omitempty"`
-	Linked          bool       `json:"linked,omitempty"`
+	Linked          bool       `json:"linked,omitzero"`
 }
 
-// RenderJSON renders messages, in the order given, as a JSON array. Text
-// (and QuotedBlocks) is rendered the same way as in Markdown output
-// (mentions expanded, mrkdwn converted) so consumers don't need to
+// jsonMessagesEnvelope is the --format json shape for a list-of-messages
+// command (history, search, thread): the rendered messages, plus a
+// truncation notice when one applies.
+type jsonMessagesEnvelope struct {
+	Messages []jsonMessage `json:"messages"`
+	Notice   string        `json:"notice,omitempty"`
+}
+
+// writeJSON writes v as slio's --format json output. The indent width and
+// the trailing newline are part of what callers branch on, so both writers
+// go through here rather than restating them.
+func writeJSON(w io.Writer, v any) error {
+	if err := json.MarshalWrite(w, v, jsontext.WithIndent("  ")); err != nil {
+		return err
+	}
+	// MarshalWrite deliberately stops at the closing brace, and the output
+	// is a line on someone's terminal.
+	_, err := fmt.Fprintln(w)
+	return err
+}
+
+// toJSONMessages converts messages, in the order given, to their JSON
+// shape. Text (and QuotedBlocks) is rendered the same way as in Markdown
+// output (mentions expanded, mrkdwn converted) so consumers don't need to
 // understand Slack's markup.
-func RenderJSON(messages []Message, resolveUser Resolver) ([]byte, error) {
+func toJSONMessages(messages []Message, resolveUser Resolver) []jsonMessage {
 	out := make([]jsonMessage, len(messages))
 	for i, m := range messages {
 		var quotedBlocks []string
 		if len(m.QuotedBlocks) > 0 {
 			quotedBlocks = make([]string, len(m.QuotedBlocks))
 			for j, block := range m.QuotedBlocks {
-				quotedBlocks[j] = RenderText(block, resolveUser)
+				quotedBlocks[j] = renderText(block, resolveUser)
 			}
 		}
 		out[i] = jsonMessage{
 			Ts:              m.Ts,
 			Time:            m.Time,
 			Author:          m.Author,
-			Text:            RenderText(m.Text, resolveUser),
+			Text:            renderText(m.Text, resolveUser),
 			Edited:          m.Edited,
 			IsSystem:        m.IsSystem,
 			Reactions:       m.Reactions,
@@ -319,7 +348,78 @@ func RenderJSON(messages []Message, resolveUser Resolver) ([]byte, error) {
 			Linked:          m.Linked,
 		}
 	}
-	return json.MarshalIndent(out, "", "  ")
+	return out
+}
+
+// WriteMessages renders messages in the requested format and writes them
+// to w. A notice (may be "") reports that the list was truncated, and
+// placement says which side of the messages it belongs on.
+//
+// In JSON mode the placement is ignored: object field order doesn't matter
+// to a consumer, so the notice is one field either way.
+func WriteMessages(w io.Writer, f Format, messages []Message, resolveUser Resolver, notice string, placement NoticePlacement) error {
+	switch f {
+	case JSON:
+		return writeJSON(w, jsonMessagesEnvelope{
+			Messages: toJSONMessages(messages, resolveUser),
+			Notice:   notice,
+		})
+	case Markdown:
+		if notice != "" && placement == NoticeBeforeMessages {
+			if _, err := fmt.Fprintf(w, "%s\n\n", notice); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintln(w, renderMarkdownList(messages, resolveUser)); err != nil {
+			return err
+		}
+		if notice != "" && placement == NoticeAfterMessages {
+			if _, err := fmt.Fprintln(w, notice); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		return unsupportedError(f)
+	}
+}
+
+// NoticePlacement says which side of the message list a truncation notice
+// goes on. `history` leads with "older messages omitted" so it is read
+// before the messages it qualifies; `search` trails with "N more results",
+// which only means anything after the results it counts past.
+type NoticePlacement int
+
+// Placements accepted by WriteMessages.
+const (
+	NoticeBeforeMessages NoticePlacement = iota
+	NoticeAfterMessages
+)
+
+// Channel is one channel in `channel list` output. Unlike Message it needs
+// no rendering pass, so it doubles as the JSON shape rather than having a
+// separate wire type.
+type Channel struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// WriteChannels renders channels in the requested format and writes them
+// to w.
+func WriteChannels(w io.Writer, f Format, channels []Channel) error {
+	switch f {
+	case JSON:
+		return writeJSON(w, channels)
+	case Markdown:
+		for _, c := range channels {
+			if _, err := fmt.Fprintf(w, "#%s\t%s\n", c.Name, c.ID); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		return unsupportedError(f)
+	}
 }
 
 // ParseTs converts a Slack message ts (e.g. "1234567890.123456") to a

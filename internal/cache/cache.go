@@ -5,7 +5,8 @@
 package cache
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -152,7 +153,10 @@ func (s *Store) writeJSON(name string, v any) error {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create cache directory: %w", err)
 	}
-	data, err := json.MarshalIndent(v, "", "  ")
+	// Deterministic sorts the users map by key. v2 doesn't sort by
+	// default, which would reshuffle the file on every write and make an
+	// updated entry indistinguishable from a rewritten file.
+	data, err := json.Marshal(v, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return fmt.Errorf("encode cache file %s: %w", name, err)
 	}

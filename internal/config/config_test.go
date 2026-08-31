@@ -213,3 +213,90 @@ func TestResolve(t *testing.T) {
 		})
 	}
 }
+
+// Save sorts the profiles map by key, which v2 does not do on its own.
+// Pinning the bytes is what holds it: this file is read and edited by
+// hand, and without the sort every write would reorder every profile and
+// bury the one that changed. Three profiles make a dropped sort fail five
+// runs in six rather than one in two.
+func TestSaveWritesProfilesInKeyOrder(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	f := &File{
+		DefaultProfile: "myws",
+		Profiles: map[string]Profile{
+			"team&co": {Token: "xoxp-2", Host: "team.slack.com", TeamID: "T2"},
+			"alpha":   {Token: "xoxp-3", Host: "alpha.slack.com", TeamID: "T3"},
+			"myws":    {Token: "xoxp-1", Host: "myws.slack.com", TeamID: "T1"},
+		},
+	}
+	if err := f.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "slio", "config.json"))
+	if err != nil {
+		t.Fatalf("read config file: %v", err)
+	}
+	want := `{
+  "default_profile": "myws",
+  "profiles": {
+    "alpha": {
+      "token": "xoxp-3",
+      "host": "alpha.slack.com",
+      "team_id": "T3"
+    },
+    "myws": {
+      "token": "xoxp-1",
+      "host": "myws.slack.com",
+      "team_id": "T1"
+    },
+    "team&co": {
+      "token": "xoxp-2",
+      "host": "team.slack.com",
+      "team_id": "T2"
+    }
+  }
+}`
+	if string(got) != want {
+		t.Errorf("config.json =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// testdata/config-v1.json holds the literal bytes a pre-v2 build wrote,
+// escapes and all. Reading it has to keep working across the encoder
+// change, or an upgrade orphans the profiles someone already registered.
+func TestLoadsFileWrittenByAPreV2Build(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	b, err := os.ReadFile(filepath.Join("testdata", "config-v1.json"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "slio"), 0o700); err != nil {
+		t.Fatalf("create config directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "slio", "config.json"), b, 0o600); err != nil {
+		t.Fatalf("seed config file: %v", err)
+	}
+
+	f, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if f.DefaultProfile != "myws" {
+		t.Errorf("DefaultProfile = %q, want myws", f.DefaultProfile)
+	}
+	// "team&co" is the interesting one: v1 escaped the ampersand, and it
+	// has to come back as a profile name that still resolves.
+	for name, want := range map[string]Profile{
+		"myws":    {Token: "xoxp-1", Host: "myws.slack.com", TeamID: "T1"},
+		"team&co": {Token: "xoxp-2", Host: "team.slack.com", TeamID: "T2"},
+	} {
+		if got := f.Profiles[name]; got != want {
+			t.Errorf("Profiles[%q] = %+v, want %+v", name, got, want)
+		}
+	}
+}

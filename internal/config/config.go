@@ -4,7 +4,8 @@
 package config
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -85,7 +86,10 @@ func (f *File) Save() error {
 		return fmt.Errorf("create config directory: %w", err)
 	}
 
-	data, err := json.MarshalIndent(f, "", "  ")
+	// Deterministic sorts the profiles map by key. v2 doesn't sort by
+	// default, and this is a file people read and edit: reshuffling every
+	// profile on each write would bury the one that actually changed.
+	data, err := json.Marshal(f, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return fmt.Errorf("encode config: %w", err)
 	}

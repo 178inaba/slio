@@ -1,0 +1,15 @@
+{
+  "default_profile": "myws",
+  "profiles": {
+    "myws": {
+      "token": "xoxp-1",
+      "host": "myws.slack.com",
+      "team_id": "T1"
+    },
+    "team\u0026co": {
+      "token": "xoxp-2",
+      "host": "team.slack.com",
+      "team_id": "T2"
+    }
+  }
+}

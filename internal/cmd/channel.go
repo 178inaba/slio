@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/178inaba/slio/internal/cache"
@@ -39,11 +37,6 @@ func newChannelListCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
-type jsonChannel struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
 func runChannelList(cmd *cobra.Command, g *globalFlags, outFormat format.Format) error {
 	ctx, cancel := commandContext(cmd, g.timeout)
 	defer cancel()
@@ -67,27 +60,9 @@ func runChannelList(cmd *cobra.Command, g *globalFlags, outFormat format.Format)
 		return err
 	}
 
-	out := cmd.OutOrStdout()
-	switch outFormat {
-	case format.JSON:
-		list := make([]jsonChannel, len(channels))
-		for i, c := range channels {
-			list[i] = jsonChannel{ID: c.ID, Name: c.Name}
-		}
-		data, err := json.MarshalIndent(list, "", "  ")
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(out, string(data))
-		return err
-	case format.Markdown:
-		for _, c := range channels {
-			if _, err := fmt.Fprintf(out, "#%s\t%s\n", c.Name, c.ID); err != nil {
-				return err
-			}
-		}
-		return nil
-	default:
-		return format.UnsupportedError(outFormat)
+	list := make([]format.Channel, len(channels))
+	for i, c := range channels {
+		list[i] = format.Channel{ID: c.ID, Name: c.Name}
 	}
+	return format.WriteChannels(cmd.OutOrStdout(), outFormat, list)
 }

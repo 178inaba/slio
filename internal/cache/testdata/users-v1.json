@@ -1,0 +1,12 @@
+{
+  "users": {
+    "U1": {
+      "display_name": "Alice \u0026 Bob",
+      "fetched_at": "2026-08-04T12:00:00Z"
+    },
+    "U2": {
+      "display_name": "\u003cscript\u003e",
+      "fetched_at": "2026-08-04T12:00:00Z"
+    }
+  }
+}

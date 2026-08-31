@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"strings"
 	"testing"

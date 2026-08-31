@@ -105,5 +105,5 @@ func runThread(cmd *cobra.Command, args []string, g *globalFlags, download bool,
 		notice = fmt.Sprintf("linked message %s not found in this thread — showing all messages unmarked", ref.TargetTs)
 	}
 
-	return writeMessages(cmd, outFormat, messages, resolver.resolve, notice, "")
+	return format.WriteMessages(cmd.OutOrStdout(), outFormat, messages, resolver.resolve, notice, format.NoticeBeforeMessages)
 }

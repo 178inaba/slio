@@ -171,3 +171,111 @@ func TestPutChannelsCreatesCacheFileOnDisk(t *testing.T) {
 		t.Errorf("stat channels.json: %v", err)
 	}
 }
+
+// writeJSON sorts the users map by key, which v2 does not do on its own.
+// Pinning the bytes is what holds it: PutUser rewrites the whole file on
+// every lookup, so without the sort each write would reorder every cached
+// user and turn a one-entry update into a whole-file diff. Three users
+// make a dropped sort fail five runs in six rather than one in two.
+func TestPutUserWritesUsersInKeyOrder(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+
+	for _, u := range []struct{ id, name string }{
+		{"U2", "<script>"},
+		{"U3", "Carol"},
+		{"U1", "Alice & Bob"},
+	} {
+		if err := s.PutUser(u.id, u.name, now); err != nil {
+			t.Fatalf("PutUser(%s) error = %v", u.id, err)
+		}
+	}
+
+	got, err := os.ReadFile(filepath.Join(s.dir, "users.json"))
+	if err != nil {
+		t.Fatalf("read users.json: %v", err)
+	}
+	want := `{
+  "users": {
+    "U1": {
+      "display_name": "Alice & Bob",
+      "fetched_at": "2026-08-04T12:00:00Z"
+    },
+    "U2": {
+      "display_name": "<script>",
+      "fetched_at": "2026-08-04T12:00:00Z"
+    },
+    "U3": {
+      "display_name": "Carol",
+      "fetched_at": "2026-08-04T12:00:00Z"
+    }
+  }
+}`
+	if string(got) != want {
+		t.Errorf("users.json =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// v1FixtureFetchedAt is the fetched_at both testdata fixtures carry. The
+// reads below derive their now from it rather than calling time.Now():
+// a fixed timestamp in a file goes stale against a moving clock, and a TTL
+// miss would look just like a decoding failure.
+var v1FixtureFetchedAt = time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+
+// seedFromV1Fixtures copies the cache files a pre-v2 build wrote into a
+// fresh store's directory.
+func seedFromV1Fixtures(t *testing.T) *Store {
+	t.Helper()
+	s := newTestStore(t)
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+		t.Fatalf("create cache directory: %v", err)
+	}
+	for fixture, name := range map[string]string{
+		"channels-v1.json": "channels.json",
+		"users-v1.json":    "users.json",
+	} {
+		b, err := os.ReadFile(filepath.Join("testdata", fixture))
+		if err != nil {
+			t.Fatalf("read %s: %v", fixture, err)
+		}
+		if err := os.WriteFile(filepath.Join(s.dir, name), b, 0o644); err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+	}
+	return s
+}
+
+// The fixtures under testdata are the literal bytes a pre-v2 build wrote,
+// escapes and all. Reading them has to keep working across the encoder
+// change, or an upgrade silently throws away an existing cache.
+func TestReadsChannelsWrittenByAPreV2Build(t *testing.T) {
+	s := seedFromV1Fixtures(t)
+
+	id, ok, err := s.ChannelIDByName("general", v1FixtureFetchedAt.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("ChannelIDByName() error = %v", err)
+	}
+	if !ok || id != "C1" {
+		t.Errorf("ChannelIDByName() = %q, %v, want C1, true", id, ok)
+	}
+}
+
+func TestReadsUsersWrittenByAPreV2Build(t *testing.T) {
+	s := seedFromV1Fixtures(t)
+
+	// Both display names hold characters v1 escaped on the way out, which
+	// is what makes them worth asserting: the escapes have to come back as
+	// the characters they stand for.
+	for userID, want := range map[string]string{
+		"U1": "Alice & Bob",
+		"U2": "<script>",
+	} {
+		name, ok, err := s.UserDisplayName(userID, v1FixtureFetchedAt.Add(time.Hour))
+		if err != nil {
+			t.Fatalf("UserDisplayName(%s) error = %v", userID, err)
+		}
+		if !ok || name != want {
+			t.Errorf("UserDisplayName(%s) = %q, %v, want %q, true", userID, name, ok, want)
+		}
+	}
+}
