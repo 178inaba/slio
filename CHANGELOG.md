@@ -1,5 +1,11 @@
 # Changelog
 
+## [v1.0.4](https://github.com/178inaba/slio/compare/v1.0.3...v1.0.4) - 2026-08-31
+
+- Enable revive and adopt the newer standard-library forms Go 1.27 offers by @178inaba in https://github.com/178inaba/slio/pull/54
+- Assert the plugin distribution invariants in CI by @178inaba in https://github.com/178inaba/slio/pull/53
+- Port the JSON handling to encoding/json/v2 by @178inaba in https://github.com/178inaba/slio/pull/57
+
 ## [v1.0.3](https://github.com/178inaba/slio/compare/v1.0.2...v1.0.3) - 2026-08-31
 
 - Leave the attest-build-provenance recommendation to its own README by @178inaba in https://github.com/178inaba/slio/pull/51
