@@ -1,5 +1,9 @@
 # Changelog
 
+## [v1.0.2](https://github.com/178inaba/slio/compare/v1.0.1...v1.0.2) - 2026-08-31
+
+- Resolve the plugin through a stable tag carrying a tagpr-bumped version by @178inaba in https://github.com/178inaba/slio/pull/45
+
 ## [v1.0.1](https://github.com/178inaba/slio/compare/v1.0.0...v1.0.1) - 2026-08-31
 
 - Attest the release archives with build provenance and move the App token to client-id by @178inaba in https://github.com/178inaba/slio/pull/42
