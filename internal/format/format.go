@@ -1,7 +1,8 @@
 // Package format renders slio's normalized Message model as either
-// AI-readable Markdown or JSON. It performs no I/O: display names and
-// mention resolution are supplied by the caller via Resolver, which is
-// typically backed by internal/cache and users.info.
+// AI-readable Markdown or JSON, onto a writer the caller supplies. It
+// reaches nothing else — no network, no disk: display names and mention
+// resolution arrive through Resolver, which is typically backed by
+// internal/cache and users.info.
 package format
 
 import (

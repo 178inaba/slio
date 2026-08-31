@@ -172,6 +172,50 @@ func TestPutChannelsCreatesCacheFileOnDisk(t *testing.T) {
 	}
 }
 
+// writeJSON sorts the users map by key, which v2 does not do on its own.
+// Pinning the bytes is what holds it: PutUser rewrites the whole file on
+// every lookup, so without the sort each write would reorder every cached
+// user and turn a one-entry update into a whole-file diff. Three users
+// make a dropped sort fail five runs in six rather than one in two.
+func TestPutUserWritesUsersInKeyOrder(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+
+	for _, u := range []struct{ id, name string }{
+		{"U2", "<script>"},
+		{"U3", "Carol"},
+		{"U1", "Alice & Bob"},
+	} {
+		if err := s.PutUser(u.id, u.name, now); err != nil {
+			t.Fatalf("PutUser(%s) error = %v", u.id, err)
+		}
+	}
+
+	got, err := os.ReadFile(filepath.Join(s.dir, "users.json"))
+	if err != nil {
+		t.Fatalf("read users.json: %v", err)
+	}
+	want := `{
+  "users": {
+    "U1": {
+      "display_name": "Alice & Bob",
+      "fetched_at": "2026-08-04T12:00:00Z"
+    },
+    "U2": {
+      "display_name": "<script>",
+      "fetched_at": "2026-08-04T12:00:00Z"
+    },
+    "U3": {
+      "display_name": "Carol",
+      "fetched_at": "2026-08-04T12:00:00Z"
+    }
+  }
+}`
+	if string(got) != want {
+		t.Errorf("users.json =\n%s\nwant\n%s", got, want)
+	}
+}
+
 // v1FixtureFetchedAt is the fetched_at both testdata fixtures carry. The
 // reads below derive their now from it rather than calling time.Now():
 // a fixed timestamp in a file goes stale against a moving clock, and a TTL

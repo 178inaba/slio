@@ -214,6 +214,56 @@ func TestResolve(t *testing.T) {
 	}
 }
 
+// Save sorts the profiles map by key, which v2 does not do on its own.
+// Pinning the bytes is what holds it: this file is read and edited by
+// hand, and without the sort every write would reorder every profile and
+// bury the one that changed. Three profiles make a dropped sort fail five
+// runs in six rather than one in two.
+func TestSaveWritesProfilesInKeyOrder(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	f := &File{
+		DefaultProfile: "myws",
+		Profiles: map[string]Profile{
+			"team&co": {Token: "xoxp-2", Host: "team.slack.com", TeamID: "T2"},
+			"alpha":   {Token: "xoxp-3", Host: "alpha.slack.com", TeamID: "T3"},
+			"myws":    {Token: "xoxp-1", Host: "myws.slack.com", TeamID: "T1"},
+		},
+	}
+	if err := f.Save(); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "slio", "config.json"))
+	if err != nil {
+		t.Fatalf("read config file: %v", err)
+	}
+	want := `{
+  "default_profile": "myws",
+  "profiles": {
+    "alpha": {
+      "token": "xoxp-3",
+      "host": "alpha.slack.com",
+      "team_id": "T3"
+    },
+    "myws": {
+      "token": "xoxp-1",
+      "host": "myws.slack.com",
+      "team_id": "T1"
+    },
+    "team&co": {
+      "token": "xoxp-2",
+      "host": "team.slack.com",
+      "team_id": "T2"
+    }
+  }
+}`
+	if string(got) != want {
+		t.Errorf("config.json =\n%s\nwant\n%s", got, want)
+	}
+}
+
 // testdata/config-v1.json holds the literal bytes a pre-v2 build wrote,
 // escapes and all. Reading it has to keep working across the encoder
 // change, or an upgrade orphans the profiles someone already registered.
