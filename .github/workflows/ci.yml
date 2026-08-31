@@ -37,6 +37,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # Break one of the three facts below and nothing goes red: this
+      # workflow passes, the release job succeeds, and the first signal is a
+      # user running an old skill against a newer binary. Bare semver is this
+      # repository's own rule — a lost version falls back to the resolved
+      # commit SHA, and a hand-written v1.0.2 desyncs from the tag tagpr
+      # looks for.
+      - name: Assert the plugin distribution invariants
+        run: |
+          version=$(jq -r '.version // ""' .claude-plugin/plugin.json)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+            || { echo "::error::.claude-plugin/plugin.json needs a bare semver version (got '$version')"; exit 1; }
+          jq -e '.plugins[0] | has("version") | not' .claude-plugin/marketplace.json >/dev/null \
+            || { echo "::error::the .claude-plugin/marketplace.json plugins entry must not carry a version, which would let a stale plugin.json mask it"; exit 1; }
+          jq -e '.plugins[0].source | type == "object" and .ref == "stable"' .claude-plugin/marketplace.json >/dev/null \
+            || { echo "::error::the .claude-plugin/marketplace.json plugins entry must resolve through source.ref \"stable\""; exit 1; }
       # golangci-lint-action resolves an empty tag — and a `latest` tag — to
       # whatever the newest release is, so a compose.yaml that lost its pin
       # would leave this job green and silently unpinned. Any other malformed
