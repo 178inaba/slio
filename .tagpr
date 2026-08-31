@@ -1,8 +1,9 @@
-; The version lives only in the tag — GoReleaser embeds it at build time,
-; so there is no file to keep in sync — and GoReleaser also creates the
-; GitHub Release, which is why tagpr must not.
+; The binary's version still comes from the tag — GoReleaser embeds it at
+; build time — but the plugin manifest carries a version of its own, which is
+; what versionFile keeps in sync; see the plugin-version rule in CLAUDE.md.
+; GoReleaser also creates the GitHub Release, which is why tagpr must not.
 [tagpr]
 	releaseBranch = main
-	versionFile = -
+	versionFile = .claude-plugin/plugin.json
 	vPrefix = true
 	release = false
