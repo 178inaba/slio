@@ -358,14 +358,14 @@ func TestRenderMarkdownRendersQuotedBlocks(t *testing.T) {
 	}
 }
 
-func TestParseTsAndFormatTsRoundTrip(t *testing.T) {
+func TestTsRoundTripsWithParseTs(t *testing.T) {
 	const ts = "1234567890.123456"
 	tm, err := ParseTs(ts)
 	if err != nil {
 		t.Fatalf("ParseTs() error = %v", err)
 	}
-	if got := FormatTs(tm); got != ts {
-		t.Errorf("FormatTs(ParseTs(%q)) = %q, want %q", ts, got, ts)
+	if got := Ts(tm); got != ts {
+		t.Errorf("Ts(ParseTs(%q)) = %q, want %q", ts, got, ts)
 	}
 }
 

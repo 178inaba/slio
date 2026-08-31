@@ -67,62 +67,62 @@ func TestThreadURLTooFewDigitsReturnsErrorNotPanic(t *testing.T) {
 	}
 }
 
-func TestParseChannelArgURL(t *testing.T) {
-	got, err := ParseChannelArg("https://myws.slack.com/archives/C0123456789")
+func TestChannelArgURL(t *testing.T) {
+	got, err := ChannelArg("https://myws.slack.com/archives/C0123456789")
 	if err != nil {
-		t.Fatalf("ParseChannelArg() error = %v", err)
+		t.Fatalf("ChannelArg() error = %v", err)
 	}
 	want := Channel{Host: "myws.slack.com", ID: "C0123456789"}
 	if got != want {
-		t.Errorf("ParseChannelArg() = %+v, want %+v", got, want)
+		t.Errorf("ChannelArg() = %+v, want %+v", got, want)
 	}
 }
 
-func TestParseChannelArgURLWithTrailingSegments(t *testing.T) {
-	got, err := ParseChannelArg("https://myws.slack.com/archives/C0123456789/p1234567890123456")
+func TestChannelArgURLWithTrailingSegments(t *testing.T) {
+	got, err := ChannelArg("https://myws.slack.com/archives/C0123456789/p1234567890123456")
 	if err != nil {
-		t.Fatalf("ParseChannelArg() error = %v", err)
+		t.Fatalf("ChannelArg() error = %v", err)
 	}
 	if got.ID != "C0123456789" || got.Host != "myws.slack.com" {
-		t.Errorf("ParseChannelArg() = %+v, want ID=C0123456789 Host=myws.slack.com", got)
+		t.Errorf("ChannelArg() = %+v, want ID=C0123456789 Host=myws.slack.com", got)
 	}
 }
 
-func TestParseChannelArgBareID(t *testing.T) {
-	got, err := ParseChannelArg("D0123456789")
+func TestChannelArgBareID(t *testing.T) {
+	got, err := ChannelArg("D0123456789")
 	if err != nil {
-		t.Fatalf("ParseChannelArg() error = %v", err)
+		t.Fatalf("ChannelArg() error = %v", err)
 	}
 	want := Channel{ID: "D0123456789"}
 	if got != want {
-		t.Errorf("ParseChannelArg() = %+v, want %+v", got, want)
+		t.Errorf("ChannelArg() = %+v, want %+v", got, want)
 	}
 }
 
-func TestParseChannelArgName(t *testing.T) {
-	got, err := ParseChannelArg("#general")
+func TestChannelArgName(t *testing.T) {
+	got, err := ChannelArg("#general")
 	if err != nil {
-		t.Fatalf("ParseChannelArg() error = %v", err)
+		t.Fatalf("ChannelArg() error = %v", err)
 	}
 	want := Channel{Name: "general"}
 	if got != want {
-		t.Errorf("ParseChannelArg() = %+v, want %+v", got, want)
+		t.Errorf("ChannelArg() = %+v, want %+v", got, want)
 	}
 }
 
-func TestParseChannelArgEmptyName(t *testing.T) {
-	if _, err := ParseChannelArg("#"); err == nil {
-		t.Fatal("ParseChannelArg() error = nil, want error")
+func TestChannelArgEmptyName(t *testing.T) {
+	if _, err := ChannelArg("#"); err == nil {
+		t.Fatal("ChannelArg() error = nil, want error")
 	}
 }
 
-func TestParseChannelArgEmpty(t *testing.T) {
-	if _, err := ParseChannelArg(""); err == nil {
-		t.Fatal("ParseChannelArg() error = nil, want error")
+func TestChannelArgEmpty(t *testing.T) {
+	if _, err := ChannelArg(""); err == nil {
+		t.Fatal("ChannelArg() error = nil, want error")
 	}
 }
 
-func TestParseTimeISO8601(t *testing.T) {
+func TestTimeISO8601(t *testing.T) {
 	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {
@@ -135,31 +135,31 @@ func TestParseTimeISO8601(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.raw, func(t *testing.T) {
-			got, err := ParseTime(tt.raw, now)
+			got, err := Time(tt.raw, now)
 			if err != nil {
-				t.Fatalf("ParseTime(%q) error = %v", tt.raw, err)
+				t.Fatalf("Time(%q) error = %v", tt.raw, err)
 			}
 			if !got.Equal(tt.want) {
-				t.Errorf("ParseTime(%q) = %v, want %v", tt.raw, got, tt.want)
+				t.Errorf("Time(%q) = %v, want %v", tt.raw, got, tt.want)
 			}
 		})
 	}
 }
 
-func TestParseTimeISO8601WithZoneIsInstantExact(t *testing.T) {
+func TestTimeISO8601WithZoneIsInstantExact(t *testing.T) {
 	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.FixedZone("JST", 9*3600))
 
-	got, err := ParseTime("2026-08-01T10:00:00+09:00", now)
+	got, err := Time("2026-08-01T10:00:00+09:00", now)
 	if err != nil {
-		t.Fatalf("ParseTime() error = %v", err)
+		t.Fatalf("Time() error = %v", err)
 	}
 	want := time.Date(2026, 8, 1, 1, 0, 0, 0, time.UTC)
 	if !got.Equal(want) {
-		t.Errorf("ParseTime() = %v, want instant equal to %v", got, want)
+		t.Errorf("Time() = %v, want instant equal to %v", got, want)
 	}
 }
 
-func TestParseTimeRelative(t *testing.T) {
+func TestTimeRelative(t *testing.T) {
 	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {
@@ -173,19 +173,19 @@ func TestParseTimeRelative(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.raw, func(t *testing.T) {
-			got, err := ParseTime(tt.raw, now)
+			got, err := Time(tt.raw, now)
 			if err != nil {
-				t.Fatalf("ParseTime(%q) error = %v", tt.raw, err)
+				t.Fatalf("Time(%q) error = %v", tt.raw, err)
 			}
 			if !got.Equal(tt.want) {
-				t.Errorf("ParseTime(%q) = %v, want %v", tt.raw, got, tt.want)
+				t.Errorf("Time(%q) = %v, want %v", tt.raw, got, tt.want)
 			}
 		})
 	}
 }
 
-func TestParseTimeInvalid(t *testing.T) {
-	if _, err := ParseTime("yesterday", time.Now()); err == nil {
-		t.Fatal("ParseTime() error = nil, want error")
+func TestTimeInvalid(t *testing.T) {
+	if _, err := Time("yesterday", time.Now()); err == nil {
+		t.Fatal("Time() error = nil, want error")
 	}
 }
