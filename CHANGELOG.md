@@ -1,5 +1,9 @@
 # Changelog
 
+## [v1.0.3](https://github.com/178inaba/slio/compare/v1.0.2...v1.0.3) - 2026-08-31
+
+- Leave the attest-build-provenance recommendation to its own README by @178inaba in https://github.com/178inaba/slio/pull/51
+
 ## [v1.0.2](https://github.com/178inaba/slio/compare/v1.0.1...v1.0.2) - 2026-08-31
 
 - Resolve the plugin through a stable tag carrying a tagpr-bumped version by @178inaba in https://github.com/178inaba/slio/pull/45
