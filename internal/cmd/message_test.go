@@ -15,7 +15,7 @@ import (
 )
 
 func TestAuthorForRegularUser(t *testing.T) {
-	m := slack.Message{Msg: slack.Msg{User: "U1"}}
+	m := slack.Message{User: "U1"}
 	got := authorFor(m, func(id string) string {
 		if id == "U1" {
 			return "Alice"
@@ -28,7 +28,7 @@ func TestAuthorForRegularUser(t *testing.T) {
 }
 
 func TestAuthorForUnresolvedUserFallsBackToID(t *testing.T) {
-	m := slack.Message{Msg: slack.Msg{User: "U1"}}
+	m := slack.Message{User: "U1"}
 	got := authorFor(m, func(string) string { return "" })
 	if got != "U1" {
 		t.Errorf("authorFor() = %q, want U1", got)
@@ -36,7 +36,7 @@ func TestAuthorForUnresolvedUserFallsBackToID(t *testing.T) {
 }
 
 func TestAuthorForBotWithUsername(t *testing.T) {
-	m := slack.Message{Msg: slack.Msg{BotID: "B1", Username: "GitHub"}}
+	m := slack.Message{BotID: "B1", Username: "GitHub"}
 	got := authorFor(m, func(string) string { return "" })
 	if got != "GitHub" {
 		t.Errorf("authorFor() = %q, want GitHub", got)
@@ -44,7 +44,7 @@ func TestAuthorForBotWithUsername(t *testing.T) {
 }
 
 func TestAuthorForBotWithBotProfileName(t *testing.T) {
-	m := slack.Message{Msg: slack.Msg{BotID: "B1", BotProfile: &slack.BotProfile{Name: "CI Bot"}}}
+	m := slack.Message{BotID: "B1", BotProfile: &slack.BotProfile{Name: "CI Bot"}}
 	got := authorFor(m, func(string) string { return "" })
 	if got != "CI Bot" {
 		t.Errorf("authorFor() = %q, want CI Bot", got)
@@ -52,12 +52,12 @@ func TestAuthorForBotWithBotProfileName(t *testing.T) {
 }
 
 func TestMessageFromMsgRegular(t *testing.T) {
-	m := slack.Message{Msg: slack.Msg{
+	m := slack.Message{
 		User:      "U1",
 		Text:      "hello",
 		Timestamp: "1234567890.123456",
 		Channel:   "C1",
-	}}
+	}
 	got, err := messageFromMsg(m, "myws.slack.com", func(string) string { return "Alice" }, false)
 	if err != nil {
 		t.Fatalf("messageFromMsg() error = %v", err)
@@ -71,13 +71,13 @@ func TestMessageFromMsgRegular(t *testing.T) {
 }
 
 func TestMessageFromMsgWithReplyInfo(t *testing.T) {
-	m := slack.Message{Msg: slack.Msg{
+	m := slack.Message{
 		User:       "U1",
 		Text:       "hello",
 		Timestamp:  "1234567890.123456",
 		Channel:    "C1",
 		ReplyCount: 3,
-	}}
+	}
 	got, err := messageFromMsg(m, "myws.slack.com", func(string) string { return "Alice" }, true)
 	if err != nil {
 		t.Fatalf("messageFromMsg() error = %v", err)
@@ -92,11 +92,11 @@ func TestMessageFromMsgWithReplyInfo(t *testing.T) {
 }
 
 func TestMessageFromMsgSystemMessage(t *testing.T) {
-	m := slack.Message{Msg: slack.Msg{
+	m := slack.Message{
 		Text:      "Alice has joined the channel",
 		Timestamp: "1234567890.123456",
 		SubType:   "channel_join",
-	}}
+	}
 	got, err := messageFromMsg(m, "myws.slack.com", func(string) string { return "" }, false)
 	if err != nil {
 		t.Fatalf("messageFromMsg() error = %v", err)

@@ -218,7 +218,7 @@ func TestRenderMarkdownLinkedMessageMarksHeaderAfterEdited(t *testing.T) {
 	}
 	got := RenderMarkdown(m, resolverFromMap(nil))
 
-	header := strings.SplitN(got, "\n", 2)[0]
+	header, _, _ := strings.Cut(got, "\n")
 	// The marker trails the whole header line, so it lands after
 	// "(edited)" rather than between the time and it.
 	if want := "(edited) 🎯 _linked message_"; !strings.HasSuffix(header, want) {

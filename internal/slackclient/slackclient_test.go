@@ -38,9 +38,9 @@ func TestAuthTestSuccess(t *testing.T) {
 }
 
 func TestAuthTestNonRetryableError(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		_, _ = fmt.Fprint(w, `{"ok":false,"error":"invalid_auth"}`)
 	})
 
@@ -48,15 +48,15 @@ func TestAuthTestNonRetryableError(t *testing.T) {
 	if err == nil {
 		t.Fatal("AuthTest() error = nil, want error")
 	}
-	if got := atomic.LoadInt32(&calls); got != 1 {
+	if got := calls.Load(); got != 1 {
 		t.Errorf("calls = %d, want 1 (no retry on non-rate-limit error)", got)
 	}
 }
 
 func TestAuthTestRetriesOn429ThenSucceeds(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		n := atomic.AddInt32(&calls, 1)
+		n := calls.Add(1)
 		if n == 1 {
 			w.Header().Set("Retry-After", "0")
 			w.WriteHeader(http.StatusTooManyRequests)
@@ -73,15 +73,15 @@ func TestAuthTestRetriesOn429ThenSucceeds(t *testing.T) {
 	if got.Host != "myws.slack.com" {
 		t.Errorf("Host = %q, want myws.slack.com", got.Host)
 	}
-	if calls := atomic.LoadInt32(&calls); calls != 2 {
+	if calls := calls.Load(); calls != 2 {
 		t.Errorf("calls = %d, want 2 (one 429 then a retry)", calls)
 	}
 }
 
 func TestConversationRepliesFollowsPagination(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		n := atomic.AddInt32(&calls, 1)
+		n := calls.Add(1)
 		if n == 1 {
 			_, _ = fmt.Fprint(w, `{"ok":true,"messages":[{"type":"message","user":"U1","text":"parent","ts":"1234567890.000001"}],`+
 				`"has_more":true,"response_metadata":{"next_cursor":"cursor1"}}`)
@@ -101,7 +101,7 @@ func TestConversationRepliesFollowsPagination(t *testing.T) {
 	if msgs[0].Text != "parent" || msgs[1].Text != "reply" {
 		t.Errorf("msgs = %+v, want [parent reply]", msgs)
 	}
-	if calls := atomic.LoadInt32(&calls); calls != 2 {
+	if calls := calls.Load(); calls != 2 {
 		t.Errorf("calls = %d, want 2 (one page then a follow-up)", calls)
 	}
 }
@@ -138,9 +138,9 @@ func TestConversationHistoryNoTruncation(t *testing.T) {
 }
 
 func TestConversationHistoryTruncatesAndReportsHasMore(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		n := atomic.AddInt32(&calls, 1)
+		n := calls.Add(1)
 		if n == 1 {
 			_, _ = fmt.Fprint(w, `{"ok":true,"messages":[{"type":"message","text":"a","ts":"1.000001"},{"type":"message","text":"b","ts":"1.000002"}],`+
 				`"has_more":true,"response_metadata":{"next_cursor":"cursor1"}}`)
@@ -177,9 +177,9 @@ func TestConversationHistoryClampsPerPageLimitTo999(t *testing.T) {
 }
 
 func TestConversationsForUserFollowsPagination(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		n := atomic.AddInt32(&calls, 1)
+		n := calls.Add(1)
 		if n == 1 {
 			_, _ = fmt.Fprint(w, `{"ok":true,"channels":[{"id":"C1","name":"general"}],"response_metadata":{"next_cursor":"cursor1"}}`)
 			return
@@ -294,9 +294,9 @@ func TestDownloadFileDetectsSignInHTML(t *testing.T) {
 }
 
 func TestDownloadFileRetriesOn429ThenSucceeds(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		if atomic.AddInt32(&calls, 1) == 1 {
+		if calls.Add(1) == 1 {
 			w.Header().Set("Retry-After", "0")
 			w.WriteHeader(http.StatusTooManyRequests)
 			return
@@ -311,7 +311,7 @@ func TestDownloadFileRetriesOn429ThenSucceeds(t *testing.T) {
 	if err := c.DownloadFile(context.Background(), srv.URL+"/files-pri/T1-F1/report.txt", dest); err != nil {
 		t.Fatalf("DownloadFile() error = %v", err)
 	}
-	if got := atomic.LoadInt32(&calls); got != 2 {
+	if got := calls.Load(); got != 2 {
 		t.Errorf("calls = %d, want 2 (one 429 then a retry)", got)
 	}
 }

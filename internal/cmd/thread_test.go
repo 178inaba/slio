@@ -60,7 +60,7 @@ func serveThread(t *testing.T) {
 // rather than its wording, which the not-found notice also uses.
 func markedBlocks(out string) []string {
 	var marked []string
-	for _, block := range strings.Split(out, "\n---\n") {
+	for block := range strings.SplitSeq(out, "\n---\n") {
 		if strings.Contains(block, "🎯") {
 			marked = append(marked, block)
 		}
