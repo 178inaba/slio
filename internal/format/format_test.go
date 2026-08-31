@@ -19,7 +19,7 @@ func decodeJSONMessages(t *testing.T, messages []Message, resolveUser Resolver) 
 	t.Helper()
 
 	var buf bytes.Buffer
-	if err := WriteMessages(&buf, JSON, messages, resolveUser, "", ""); err != nil {
+	if err := WriteMessages(&buf, JSON, messages, resolveUser, "", NoticeBeforeMessages); err != nil {
 		t.Fatalf("WriteMessages() error = %v", err)
 	}
 	var envelope struct {
@@ -38,7 +38,7 @@ func decodeJSONMessages(t *testing.T, messages []Message, resolveUser Resolver) 
 func TestWritersRejectUnknownFormat(t *testing.T) {
 	t.Run("messages", func(t *testing.T) {
 		var out bytes.Buffer
-		err := WriteMessages(&out, Format("yaml"), nil, resolverFromMap(nil), "", "")
+		err := WriteMessages(&out, Format("yaml"), nil, resolverFromMap(nil), "", NoticeBeforeMessages)
 		if err == nil || !strings.Contains(err.Error(), "yaml") {
 			t.Fatalf("WriteMessages(yaml) error = %v, want an unsupported-format error naming it", err)
 		}

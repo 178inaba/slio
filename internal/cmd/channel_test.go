@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/178inaba/slio/internal/cache"
-	"github.com/178inaba/slio/internal/format"
 )
 
 func TestRunChannelListMarkdown(t *testing.T) {
@@ -52,12 +51,18 @@ func TestRunChannelListJSON(t *testing.T) {
 		t.Fatalf("slio channel list --format json: exit code = %d, stderr = %s", code, stderr)
 	}
 
-	var channels []format.Channel
+	// Decoded generically rather than into format.Channel: decoding into
+	// the struct that declares the tags would restate the key names rather
+	// than check them, and would keep passing through a rename.
+	var channels []map[string]any
 	if err := json.Unmarshal([]byte(got), &channels); err != nil {
 		t.Fatalf("unmarshal output: %v; output = %s", err, got)
 	}
-	if len(channels) != 1 || channels[0].ID != "C1" || channels[0].Name != "general" {
-		t.Errorf("channels = %+v, want [{C1 general}]", channels)
+	if len(channels) != 1 {
+		t.Fatalf("channels = %v, want one entry", channels)
+	}
+	if channels[0]["id"] != "C1" || channels[0]["name"] != "general" {
+		t.Errorf("channels[0] = %v, want id C1 and name general", channels[0])
 	}
 }
 

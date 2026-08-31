@@ -72,5 +72,5 @@ func runSearch(cmd *cobra.Command, args []string, g *globalFlags, limit int, out
 		notice = fmt.Sprintf("%d more results", more)
 	}
 
-	return format.WriteMessages(cmd.OutOrStdout(), outFormat, messages, resolver.resolve, "", notice)
+	return format.WriteMessages(cmd.OutOrStdout(), outFormat, messages, resolver.resolve, notice, format.NoticeAfterMessages)
 }

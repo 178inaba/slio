@@ -22,19 +22,12 @@ import (
 // change to it has to show up as a reviewable diff.
 var updateGolden = flag.Bool("update", false, "rewrite the golden files under testdata/")
 
-// U+2028 and U+2029 are built from their code points rather than written
-// literally: they are invisible in source, and a fixture has to carry them
-// because they are escaped on the way out.
-var (
-	lineSeparator      = string(rune(0x2028))
-	paragraphSeparator = string(rune(0x2029))
-)
-
-// entityText exercises the characters that JSON encoders disagree about.
+// entityText carries every character the two JSON encoders disagree about.
 // Slack sends < > & as entities and slio renders them back to the bare
-// characters, so they reach the encoder no matter which format is asked
-// for.
-var entityText = `a &lt;b&gt; &amp; c` + lineSeparator + `then` + paragraphSeparator + `end`
+// characters, so they reach the encoder whichever format is asked for.
+// U+2028 and U+2029 — invisible here, hence the escapes — are the pair v1
+// escaped for the benefit of JavaScript sources.
+const entityText = "a &lt;b&gt; &amp; c\u2028then\u2029end"
 
 // pinTimeZone makes rendered timestamps reproducible. Both formats carry
 // the local zone -- Markdown through formatLocalTime, JSON through the

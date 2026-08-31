@@ -304,13 +304,23 @@ type jsonMessagesEnvelope struct {
 	Notice   string        `json:"notice,omitempty"`
 }
 
+// writeJSON writes v as slio's --format json output. The indent width and
+// the trailing newline are part of what callers branch on, so both writers
+// go through here rather than restating them.
+func writeJSON(w io.Writer, v any) error {
+	if err := json.MarshalWrite(w, v, jsontext.WithIndent("  ")); err != nil {
+		return err
+	}
+	// MarshalWrite deliberately stops at the closing brace, and the output
+	// is a line on someone's terminal.
+	_, err := fmt.Fprintln(w)
+	return err
+}
+
 // toJSONMessages converts messages, in the order given, to their JSON
 // shape. Text (and QuotedBlocks) is rendered the same way as in Markdown
 // output (mentions expanded, mrkdwn converted) so consumers don't need to
 // understand Slack's markup.
-//
-// The result is always non-nil: an empty list has to encode as [] rather
-// than null, which is what a caller ranging over "messages" expects.
 func toJSONMessages(messages []Message, resolveUser Resolver) []jsonMessage {
 	out := make([]jsonMessage, len(messages))
 	for i, m := range messages {
@@ -341,40 +351,29 @@ func toJSONMessages(messages []Message, resolveUser Resolver) []jsonMessage {
 }
 
 // WriteMessages renders messages in the requested format and writes them
-// to w. leadingNotice/trailingNotice (either may be "") carry a truncation
-// notice — "history" needs it to precede the message list ("older messages
-// omitted"), "search" needs it to follow ("N more results"). In JSON mode
-// there's no leading/trailing distinction (object field order doesn't
-// matter to a consumer), so both collapse into a single "notice" field so
-// the output stays valid, parseable JSON.
-func WriteMessages(w io.Writer, f Format, messages []Message, resolveUser Resolver, leadingNotice, trailingNotice string) error {
+// to w. A notice (may be "") reports that the list was truncated, and
+// placement says which side of the messages it belongs on.
+//
+// In JSON mode the placement is ignored: object field order doesn't matter
+// to a consumer, so the notice is one field either way.
+func WriteMessages(w io.Writer, f Format, messages []Message, resolveUser Resolver, notice string, placement NoticePlacement) error {
 	switch f {
 	case JSON:
-		envelope := jsonMessagesEnvelope{
+		return writeJSON(w, jsonMessagesEnvelope{
 			Messages: toJSONMessages(messages, resolveUser),
-			Notice:   strings.TrimSpace(leadingNotice + trailingNotice),
-		}
-		if err := json.MarshalWrite(w, envelope, jsontext.WithIndent("  ")); err != nil {
-			return err
-		}
-		// MarshalWrite deliberately stops at the closing brace, and the
-		// output is a line on someone's terminal.
-		_, err := fmt.Fprintln(w)
-		return err
+			Notice:   notice,
+		})
 	case Markdown:
-		if leadingNotice != "" {
-			if _, err := fmt.Fprintln(w, leadingNotice); err != nil {
-				return err
-			}
-			if _, err := fmt.Fprintln(w); err != nil {
+		if notice != "" && placement == NoticeBeforeMessages {
+			if _, err := fmt.Fprintf(w, "%s\n\n", notice); err != nil {
 				return err
 			}
 		}
 		if _, err := fmt.Fprintln(w, renderMarkdownList(messages, resolveUser)); err != nil {
 			return err
 		}
-		if trailingNotice != "" {
-			if _, err := fmt.Fprintln(w, trailingNotice); err != nil {
+		if notice != "" && placement == NoticeAfterMessages {
+			if _, err := fmt.Fprintln(w, notice); err != nil {
 				return err
 			}
 		}
@@ -383,6 +382,18 @@ func WriteMessages(w io.Writer, f Format, messages []Message, resolveUser Resolv
 		return unsupportedError(f)
 	}
 }
+
+// NoticePlacement says which side of the message list a truncation notice
+// goes on. `history` leads with "older messages omitted" so it is read
+// before the messages it qualifies; `search` trails with "N more results",
+// which only means anything after the results it counts past.
+type NoticePlacement int
+
+// Placements accepted by WriteMessages.
+const (
+	NoticeBeforeMessages NoticePlacement = iota
+	NoticeAfterMessages
+)
 
 // Channel is one channel in `channel list` output. Unlike Message it needs
 // no rendering pass, so it doubles as the JSON shape rather than having a
@@ -397,11 +408,7 @@ type Channel struct {
 func WriteChannels(w io.Writer, f Format, channels []Channel) error {
 	switch f {
 	case JSON:
-		if err := json.MarshalWrite(w, channels, jsontext.WithIndent("  ")); err != nil {
-			return err
-		}
-		_, err := fmt.Fprintln(w)
-		return err
+		return writeJSON(w, channels)
 	case Markdown:
 		for _, c := range channels {
 			if _, err := fmt.Fprintf(w, "#%s\t%s\n", c.Name, c.ID); err != nil {
