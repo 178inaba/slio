@@ -72,12 +72,9 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-      # actions/attest rather than the attest-build-provenance wrapper, which
-      # its own README now points new workflows away from: with no predicate
-      # or SBOM input this generates the same build provenance, without
-      # trailing the pin the wrapper holds on this action. The subject is the
-      # checksums file named by checksum.name_template in .goreleaser.yaml
-      # rather than a glob, so the subject list follows the target matrix.
+      # The subject is the checksums file named by checksum.name_template in
+      # .goreleaser.yaml rather than a glob, so the subject list follows the
+      # target matrix.
       - uses: actions/attest@v4
         if: steps.tagpr.outputs.tag != ''
         with:
