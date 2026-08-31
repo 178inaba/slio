@@ -73,8 +73,8 @@ func TestAuthTestRetriesOn429ThenSucceeds(t *testing.T) {
 	if got.Host != "myws.slack.com" {
 		t.Errorf("Host = %q, want myws.slack.com", got.Host)
 	}
-	if calls := calls.Load(); calls != 2 {
-		t.Errorf("calls = %d, want 2 (one 429 then a retry)", calls)
+	if n := calls.Load(); n != 2 {
+		t.Errorf("calls = %d, want 2 (one 429 then a retry)", n)
 	}
 }
 
@@ -101,8 +101,8 @@ func TestConversationRepliesFollowsPagination(t *testing.T) {
 	if msgs[0].Text != "parent" || msgs[1].Text != "reply" {
 		t.Errorf("msgs = %+v, want [parent reply]", msgs)
 	}
-	if calls := calls.Load(); calls != 2 {
-		t.Errorf("calls = %d, want 2 (one page then a follow-up)", calls)
+	if got := calls.Load(); got != 2 {
+		t.Errorf("calls = %d, want 2 (one page then a follow-up)", got)
 	}
 }
 
