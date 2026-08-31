@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -21,6 +22,38 @@ const timeoutExitCode = 124
 
 // errorPrefix leads every failure slio reports, as the README promises.
 const errorPrefix = "Error:"
+
+// unknownVersion is the floor --version falls back to, and the reason
+// resolveVersion never answers with the empty string: cobra registers no
+// version flag at all for an empty Version, so a build nobody anticipated
+// would lose the flag rather than print a vague answer.
+const unknownVersion = "unknown"
+
+// version is the release version, injected at link time by GoReleaser with
+// -X github.com/178inaba/slio/internal/cmd.version={{.Version}}. An
+// -ldflags target has to be a package-level variable, which is why this one
+// is, against the rule the rest of the package follows.
+var version string
+
+// resolveVersion reports the version --version prints. The fallback source
+// is the module version the toolchain recorded: `v1.2.3` for `go install
+// …@v1.2.3`, `(devel)` or a VCS pseudo-version for a local `go build`.
+//
+// It takes the build info through a parameter rather than calling
+// debug.ReadBuildInfo itself so that a test can drive every source; a test
+// binary carries build info of its own.
+func resolveVersion(embedded string, readBuildInfo func() (*debug.BuildInfo, bool)) string {
+	if embedded == "" {
+		info, ok := readBuildInfo()
+		if !ok || info.Main.Version == "" {
+			return unknownVersion
+		}
+		embedded = info.Main.Version
+	}
+	// GoReleaser's {{.Version}} arrives without the prefix already; the
+	// module version does not, and the two should read the same.
+	return strings.TrimPrefix(embedded, "v")
+}
 
 // globalFlags carries the root persistent flag values into each command's
 // RunE. newRootCmd binds them and hands the same pointer to every
@@ -50,6 +83,8 @@ func newRootCmd(g *globalFlags, u *unknownCommand) *cobra.Command {
 		Long: `slio fetches Slack threads, channel history, and search results as
 AI-readable Markdown (or JSON), so an AI coding agent can read Slack
 discussions directly instead of relying on pasted screenshots.`,
+		// cobra registers --version from this, and takes the free -v too.
+		Version: resolveVersion(version, debug.ReadBuildInfo),
 		// Errors are printed once in Execute; the default behavior would
 		// print usage and the error again on every runtime failure, which
 		// is noise for the primary (agent) consumer.
@@ -182,16 +217,16 @@ Simply type slio help [path to command] for full details.`,
 			if target == nil || err != nil {
 				return fmt.Errorf("unknown help topic %q", strings.Join(args, " "))
 			}
-			// The flag is registered lazily while executing, so a command
-			// reached this way has to be given one before its help is
-			// rendered, or the listing would omit --help.
+			// Both flags are registered lazily while executing, so a
+			// command reached this way has to be given them before its help
+			// is rendered, or the listing would omit them. Seeding the
+			// version flag is a no-op below the root, which is what keeps
+			// `slio help <command>` matching `slio <command> --help`.
 			//
-			// cobra's version also seeds the version flag and passes its
-			// context down. Neither is carried over: slio sets no Version,
-			// which makes InitDefaultVersionFlag a no-op, and the help
-			// templates read no context. Setting a Version would mean
-			// adding the first of those back.
+			// cobra's version also passes its context down; that is still
+			// not carried over, because the help templates read no context.
 			target.InitDefaultHelpFlag()
+			target.InitDefaultVersionFlag()
 			return target.Help()
 		},
 	}

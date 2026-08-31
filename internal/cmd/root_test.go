@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -490,6 +491,110 @@ func TestTimeoutFlagTakesADuration(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), "missing unit in duration") {
 				t.Errorf("error = %v, want it to report the missing duration unit", err)
+			}
+		})
+	}
+}
+
+// buildInfoReader returns a debug.ReadBuildInfo stand-in reporting the given
+// main module version.
+func buildInfoReader(mainVersion string) func() (*debug.BuildInfo, bool) {
+	return func() (*debug.BuildInfo, bool) {
+		return &debug.BuildInfo{Main: debug.Module{Version: mainVersion}}, true
+	}
+}
+
+// TestResolveVersion covers the sources --version can be answered from, in
+// the order they are tried: the string GoReleaser embeds, the module version
+// the toolchain recorded, and the unknownVersion floor — which the last two
+// rows pin because it is load-bearing, for the reason its own comment gives.
+func TestResolveVersion(t *testing.T) {
+	noBuildInfo := func() (*debug.BuildInfo, bool) { return nil, false }
+
+	tests := []struct {
+		name          string
+		embedded      string
+		readBuildInfo func() (*debug.BuildInfo, bool)
+		want          string
+	}{
+		{
+			name:          "the embedded version wins",
+			embedded:      "1.2.3",
+			readBuildInfo: buildInfoReader("v9.9.9"),
+			want:          "1.2.3",
+		},
+		{
+			name:          "an embedded v prefix is stripped",
+			embedded:      "v1.2.3",
+			readBuildInfo: buildInfoReader("v9.9.9"),
+			want:          "1.2.3",
+		},
+		{
+			name:          "go install records the module version",
+			readBuildInfo: buildInfoReader("v1.2.3"),
+			want:          "1.2.3",
+		},
+		{
+			name:          "a local go build records (devel)",
+			readBuildInfo: buildInfoReader("(devel)"),
+			want:          "(devel)",
+		},
+		{
+			name:          "build info with no module version falls through",
+			readBuildInfo: buildInfoReader(""),
+			want:          "unknown",
+		},
+		{
+			name:          "no build info at all",
+			readBuildInfo: noBuildInfo,
+			want:          "unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveVersion(tt.embedded, tt.readBuildInfo); got != tt.want {
+				t.Errorf("resolveVersion(%q, ...) = %q, want %q", tt.embedded, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestVersionFlagReportsAVersion covers the wiring rather than the
+// resolution: however the binary was built, --version answers on stdout and
+// exits 0. Only the shape is asserted, because the version a test binary
+// resolves to is whatever the toolchain recorded for it.
+func TestVersionFlagReportsAVersion(t *testing.T) {
+	const prefix = "slio version "
+
+	stdout, stderr, code := runSlio(t, "--version")
+	if code != 0 {
+		t.Fatalf("slio --version: exit code = %d, stderr = %s", code, stderr)
+	}
+	if !strings.HasPrefix(stdout, prefix) {
+		t.Fatalf("stdout = %q, want it to start with %q", stdout, prefix)
+	}
+	if got := strings.TrimSpace(strings.TrimPrefix(stdout, prefix)); got == "" {
+		t.Errorf("stdout = %q, want a non-empty version after the prefix", stdout)
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty", stderr)
+	}
+}
+
+// TestVersionFlagIsListedInBothHelpRoutes pins the reason newHelpCmd seeds
+// the version flag itself: cobra registers it while executing a command, and
+// `slio help` renders another command's help rather than its own, so without
+// the seed the listing would be missing a flag that `slio --help` shows.
+func TestVersionFlagIsListedInBothHelpRoutes(t *testing.T) {
+	for _, args := range [][]string{{"--help"}, {"help"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			stdout, stderr, code := runSlio(t, args...)
+			if code != 0 {
+				t.Fatalf("slio %s: exit code = %d, stderr = %s", strings.Join(args, " "), code, stderr)
+			}
+			if !strings.Contains(stdout, "--version") {
+				t.Errorf("stdout = %q, want it to list --version", stdout)
 			}
 		})
 	}

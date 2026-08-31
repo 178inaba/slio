@@ -1,0 +1,8 @@
+; The version lives only in the tag — GoReleaser embeds it at build time,
+; so there is no file to keep in sync — and GoReleaser also creates the
+; GitHub Release, which is why tagpr must not.
+[tagpr]
+	releaseBranch = main
+	versionFile = -
+	vPrefix = true
+	release = false

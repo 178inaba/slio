@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+# Two pushes to main must not run two tagpr instances at once: they would
+# race on the release pull request. Unlike CI this never cancels a run in
+# progress — the second half of this job publishes a release, and killing it
+# midway would leave a tag with no artifacts behind it. Only one run waits,
+# so if a third push replaces the release pull request's merge, re-run that
+# run to release from the same commit.
+concurrency:
+  group: ${{ github.workflow }}
+
+# Nothing here writes with the workflow's own token: tagpr and GoReleaser
+# both authenticate as the GitHub App below, so read access for the checkout
+# is all that is needed.
+permissions:
+  contents: read
+
+jobs:
+  # No `needs:` on the CI job: the release pull request's contents were
+  # already tested on the pull request itself.
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # tagpr needs the history since the last tag; GoReleaser, the tags.
+          fetch-depth: 0
+          # Without this, checkout leaves its own credentials in
+          # http.<host>.extraheader, and tagpr — which installs the App
+          # token only when that setting is absent — would push the tag as
+          # the default GITHUB_TOKEN, which the permissions above reject.
+          persist-credentials: false
+      # A GitHub App rather than the default GITHUB_TOKEN: GITHUB_TOKEN
+      # cannot push to the tap repository, and a pull request it opens gets
+      # no CI run until a maintainer approves it in the merge box.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: 178inaba
+          repositories: slio,homebrew-tap
+      # Refreshes the release pull request; tags the push that merges it.
+      - uses: Songmu/tagpr@v1
+        id: tagpr
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+      # Gated like the step it serves: most pushes release nothing.
+      - uses: actions/setup-go@v7
+        if: steps.tagpr.outputs.tag != ''
+        with:
+          go-version-file: go.mod
+      # Same job as tagpr rather than a second workflow on the tag: a tag
+      # pushed from a workflow does not reliably start another one. tagpr
+      # creates the tag locally before pushing, so it is on HEAD here.
+      - uses: goreleaser/goreleaser-action@v7
+        if: steps.tagpr.outputs.tag != ''
+        with:
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}

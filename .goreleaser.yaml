@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+
+# This configuration is shared in shape with the sibling CLIs (cflio, rdsh),
+# so a change worth making here is usually worth making there too.
+version: 2
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # The version is only ever embedded here — no constant is committed to
+    # the repository (see .tagpr's versionFile). internal/cmd.resolveVersion
+    # covers the builds that reach it empty.
+    ldflags:
+      - -s -w -X github.com/178inaba/slio/internal/cmd.version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt
+
+homebrew_casks:
+  - name: slio
+    repository:
+      owner: 178inaba
+      name: homebrew-tap
+      # The App token the workflow mints: the default GITHUB_TOKEN cannot
+      # write to another repository.
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    homepage: https://github.com/178inaba/slio
+    # Byte-identical to the plugin description — see the synced-surface rule
+    # in CLAUDE.md.
+    description: "Read-only Slack CLI for AI coding agents: fetch threads, channel history, and search results as AI-readable Markdown."
+    hooks:
+      post:
+        # The binary is neither signed nor notarized, so Gatekeeper would
+        # refuse to run what the cask just downloaded.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/slio"]
+          end

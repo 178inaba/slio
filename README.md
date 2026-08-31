@@ -9,9 +9,21 @@ When you ask an AI agent about a Slack discussion, the usual workflow is to take
 
 ## Install
 
+With [Homebrew](https://brew.sh) on macOS:
+
+```sh
+brew install 178inaba/tap/slio
+```
+
+Or download the archive for your OS and architecture from the [Releases page](https://github.com/178inaba/slio/releases), unpack it, and put the `slio` binary somewhere on your `PATH`.
+
+Or, with a Go toolchain:
+
 ```sh
 go install github.com/178inaba/slio@latest
 ```
+
+Check it with `slio --version`.
 
 ## Setup
 
