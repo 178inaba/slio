@@ -162,7 +162,7 @@ func TestUserResolverPropagatesDeadlineExceeded(t *testing.T) {
 		t.Fatalf("cache.Open() error = %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 0)
+	ctx, cancel := context.WithTimeout(t.Context(), 0)
 	defer cancel()
 	<-ctx.Done() // guarantee the deadline has already passed before resolving
 
@@ -189,7 +189,7 @@ func TestUserResolverDoesNotRecordOrdinaryLookupFailure(t *testing.T) {
 		t.Fatalf("cache.Open() error = %v", err)
 	}
 
-	r := newUserResolver(context.Background(), client, store, time.Now())
+	r := newUserResolver(t.Context(), client, store, time.Now())
 	if got := r.resolve("U1"); got != "" {
 		t.Errorf("resolve() = %q, want empty", got)
 	}

@@ -446,7 +446,7 @@ func TestCommandContextTimeout(t *testing.T) {
 			// Command.Context returns the stored context as-is, and cobra
 			// only fills it in while executing; a command built by hand
 			// would hand commandContext a nil parent.
-			cmd.SetContext(context.Background())
+			cmd.SetContext(t.Context())
 
 			ctx, cancel := commandContext(cmd, tt.timeout)
 			defer cancel()

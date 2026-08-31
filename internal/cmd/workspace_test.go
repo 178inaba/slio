@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -21,7 +20,7 @@ func TestResolveWorkspaceViaSlioToken(t *testing.T) {
 	srv := newAuthTestServer(t, "myws.slack.com", "T1")
 	stubSlackClientFactory(t, srv)
 
-	creds, host, cacheKey, err := resolveWorkspace(context.Background(), "", "")
+	creds, host, cacheKey, err := resolveWorkspace(t.Context(), "", "")
 	if err != nil {
 		t.Fatalf("resolveWorkspace() error = %v", err)
 	}
@@ -47,7 +46,7 @@ func TestResolveWorkspaceViaProfileDoesNotCallAuthTest(t *testing.T) {
 		return nil
 	}
 
-	_, host, cacheKey, err := resolveWorkspace(context.Background(), "", "")
+	_, host, cacheKey, err := resolveWorkspace(t.Context(), "", "")
 	if err != nil {
 		t.Fatalf("resolveWorkspace() error = %v", err)
 	}
