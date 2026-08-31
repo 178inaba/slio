@@ -25,6 +25,16 @@ go install github.com/178inaba/slio@latest
 
 Check it with `slio --version`.
 
+### Verify a download
+
+After downloading an archive:
+
+```sh
+gh attestation verify <downloaded archive> --repo 178inaba/slio
+```
+
+A pass proves the archive was built by this repository's release workflow from the tagged commit, and has not been altered since.
+
 ## Setup
 
 `slio` uses a Slack user token (`xoxp-...`). Each user creates their own Slack app in their own workspace from the manifest bundled in this repo, so the app stays "internal" and keeps the higher rate limits internal apps get.

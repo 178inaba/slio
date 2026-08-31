@@ -14,11 +14,15 @@ on:
 concurrency:
   group: ${{ github.workflow }}
 
-# Nothing here writes with the workflow's own token: tagpr and GoReleaser
-# both authenticate as the GitHub App below, so read access for the checkout
-# is all that is needed.
+# contents stays read: the checkout only reads, and tagpr and GoReleaser
+# authenticate as the GitHub App below rather than with the workflow's own
+# token. The three writes are what actions/attest documents as required for
+# the attestation step, which is the one step that does use that token.
 permissions:
   contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   # No `needs:` on the CI job: the release pull request's contents were
@@ -66,3 +70,15 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+      # actions/attest rather than the attest-build-provenance wrapper, which
+      # its own README now points new workflows away from: with no predicate
+      # or SBOM input this generates the same build provenance, without
+      # trailing the pin the wrapper holds on this action.
+      #
+      # The subject is the checksums file rather than a glob over the
+      # archives, so the subject list follows whatever GoReleaser produced and
+      # a change to the target matrix needs no edit here.
+      - uses: actions/attest@v4
+        if: steps.tagpr.outputs.tag != ''
+        with:
+          subject-checksums: dist/checksums.txt
