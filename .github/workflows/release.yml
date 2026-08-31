@@ -14,11 +14,15 @@ on:
 concurrency:
   group: ${{ github.workflow }}
 
-# Nothing here writes with the workflow's own token: tagpr and GoReleaser
-# both authenticate as the GitHub App below, so read access for the checkout
-# is all that is needed.
+# contents stays read: the checkout only reads, and tagpr and GoReleaser
+# authenticate as the GitHub App below rather than with the workflow's own
+# token. The writes are what actions/attest requires for the attestation
+# step, the one step that writes with that token.
 permissions:
   contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   # No `needs:` on the CI job: the release pull request's contents were
@@ -38,11 +42,13 @@ jobs:
           persist-credentials: false
       # A GitHub App rather than the default GITHUB_TOKEN: GITHUB_TOKEN
       # cannot push to the tap repository, and a pull request it opens gets
-      # no CI run until a maintainer approves it in the merge box.
+      # no CI run until a maintainer approves it in the merge box. The Client
+      # ID is a different value from the App ID, so APP_CLIENT_ID is its own
+      # repository variable rather than a rename of APP_ID.
       - uses: actions/create-github-app-token@v3
         id: app-token
         with:
-          app-id: ${{ vars.APP_ID }}
+          client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           owner: 178inaba
           repositories: slio,homebrew-tap
@@ -66,3 +72,13 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+      # actions/attest rather than the attest-build-provenance wrapper, which
+      # its own README now points new workflows away from: with no predicate
+      # or SBOM input this generates the same build provenance, without
+      # trailing the pin the wrapper holds on this action. The subject is the
+      # checksums file named by checksum.name_template in .goreleaser.yaml
+      # rather than a glob, so the subject list follows the target matrix.
+      - uses: actions/attest@v4
+        if: steps.tagpr.outputs.tag != ''
+        with:
+          subject-checksums: dist/checksums.txt
