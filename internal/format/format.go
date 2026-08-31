@@ -5,7 +5,8 @@
 package format
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"regexp"
@@ -274,20 +275,25 @@ func renderMarkdownList(messages []Message, resolveUser Resolver) string {
 }
 
 // jsonMessage is the --format json representation of a single message.
+// The two omit options are not interchangeable here. "omitempty" drops a
+// field whose JSON form is empty — "", [] — which is what the strings and
+// lists want. It keeps a false or a 0, though, because neither is empty
+// JSON, so the flags and the count ask for "omitzero" instead: absent
+// rather than false is what tells a consumer the flag doesn't apply.
 type jsonMessage struct {
 	Ts              string     `json:"ts"`
 	Time            time.Time  `json:"time"`
 	Author          string     `json:"author,omitempty"`
 	Text            string     `json:"text"`
-	Edited          bool       `json:"edited,omitempty"`
-	IsSystem        bool       `json:"is_system,omitempty"`
+	Edited          bool       `json:"edited,omitzero"`
+	IsSystem        bool       `json:"is_system,omitzero"`
 	Reactions       []Reaction `json:"reactions,omitempty"`
 	Files           []FileInfo `json:"files,omitempty"`
-	ReplyCount      int        `json:"reply_count,omitempty"`
+	ReplyCount      int        `json:"reply_count,omitzero"`
 	ThreadPermalink string     `json:"thread_permalink,omitempty"`
 	Permalink       string     `json:"permalink,omitempty"`
 	QuotedBlocks    []string   `json:"quoted_blocks,omitempty"`
-	Linked          bool       `json:"linked,omitempty"`
+	Linked          bool       `json:"linked,omitzero"`
 }
 
 // jsonMessagesEnvelope is the --format json shape for a list-of-messages
@@ -348,11 +354,12 @@ func WriteMessages(w io.Writer, f Format, messages []Message, resolveUser Resolv
 			Messages: toJSONMessages(messages, resolveUser),
 			Notice:   strings.TrimSpace(leadingNotice + trailingNotice),
 		}
-		data, err := json.MarshalIndent(envelope, "", "  ")
-		if err != nil {
+		if err := json.MarshalWrite(w, envelope, jsontext.WithIndent("  ")); err != nil {
 			return err
 		}
-		_, err = fmt.Fprintln(w, string(data))
+		// MarshalWrite deliberately stops at the closing brace, and the
+		// output is a line on someone's terminal.
+		_, err := fmt.Fprintln(w)
 		return err
 	case Markdown:
 		if leadingNotice != "" {
@@ -390,11 +397,10 @@ type Channel struct {
 func WriteChannels(w io.Writer, f Format, channels []Channel) error {
 	switch f {
 	case JSON:
-		data, err := json.MarshalIndent(channels, "", "  ")
-		if err != nil {
+		if err := json.MarshalWrite(w, channels, jsontext.WithIndent("  ")); err != nil {
 			return err
 		}
-		_, err = fmt.Fprintln(w, string(data))
+		_, err := fmt.Fprintln(w)
 		return err
 	case Markdown:
 		for _, c := range channels {

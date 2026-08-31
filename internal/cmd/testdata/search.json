@@ -4,8 +4,8 @@
       "ts": "1234567890.000001",
       "time": "2009-02-13T23:31:30.000001Z",
       "author": "Bob",
-      "text": "match a \u003cb\u003e \u0026 c\u2028then\u2029end",
-      "permalink": "https://myws.slack.com/archives/C1/p1234567890000001?a=1\u0026amp;b=2",
+      "text": "match a <b> & c then end",
+      "permalink": "https://myws.slack.com/archives/C1/p1234567890000001?a=1&amp;b=2",
       "quoted_blocks": [
         "quoted match"
       ]

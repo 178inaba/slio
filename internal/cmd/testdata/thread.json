@@ -4,7 +4,7 @@
       "ts": "1234567890.000001",
       "time": "2009-02-13T23:31:30.000001Z",
       "author": "Alice",
-      "text": "parent a \u003cb\u003e \u0026 c\u2028then\u2029end for **@Alice**",
+      "text": "parent a <b> & c then end for **@Alice**",
       "reactions": [
         {
           "name": "tada",
@@ -17,7 +17,7 @@
       ],
       "files": [
         {
-          "name": "report \u0026amp; notes.txt",
+          "name": "report &amp; notes.txt",
           "type": "text",
           "size": 13
         }
@@ -30,7 +30,7 @@
       "text": "a reply",
       "edited": true,
       "quoted_blocks": [
-        "quoted \u003ci\u003e block"
+        "quoted <i> block"
       ],
       "linked": true
     }
