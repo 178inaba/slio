@@ -49,7 +49,7 @@ jobs:
       - name: Assert the plugin distribution invariants
         run: |
           version=$(jq -r '.version // ""' .claude-plugin/plugin.json)
-          jq -e '(.version // "") | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")' .claude-plugin/plugin.json >/dev/null \
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
             || { echo "::error::.claude-plugin/plugin.json needs a bare semver version (got '$version')"; exit 1; }
           jq -e '.plugins[0] | has("version") | not' .claude-plugin/marketplace.json >/dev/null \
             || { echo "::error::the .claude-plugin/marketplace.json plugins entry must not carry a version, which would let a stale plugin.json mask it"; exit 1; }
