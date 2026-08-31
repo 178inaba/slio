@@ -15,8 +15,9 @@ builds:
       - amd64
       - arm64
     # The version is only ever embedded here — no constant is committed to
-    # the repository (see .tagpr's versionFile). internal/cmd.resolveVersion
-    # covers the builds that reach it empty.
+    # the repository; the file .tagpr names in versionFile holds the plugin
+    # manifest's version, not this one. internal/cmd.resolveVersion covers
+    # the builds that reach it empty.
     ldflags:
       - -s -w -X github.com/178inaba/slio/internal/cmd.version={{.Version}}
 

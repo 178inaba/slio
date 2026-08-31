@@ -9,7 +9,11 @@
   "plugins": [
     {
       "name": "slio",
-      "source": "./",
+      "source": {
+        "source": "github",
+        "repo": "178inaba/slio",
+        "ref": "stable"
+      },
       "description": "Read-only Slack CLI for AI coding agents: fetch threads, channel history, and search results as AI-readable Markdown."
     }
   ]
