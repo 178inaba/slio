@@ -1,0 +1,19 @@
+{
+  "messages": [
+    {
+      "ts": "1234567890.000002",
+      "time": "2009-02-13T23:31:30.000002Z",
+      "author": "Alice",
+      "text": "middle"
+    },
+    {
+      "ts": "1234567890.000003",
+      "time": "2009-02-13T23:31:30.000003Z",
+      "author": "Alice",
+      "text": "newest a \u003cb\u003e \u0026 c\u2028then\u2029end",
+      "reply_count": 4,
+      "thread_permalink": "https://myws.slack.com/archives/C1/p1234567890000003?thread_ts=1234567890.000003\u0026cid=C1"
+    }
+  ],
+  "notice": "older messages omitted — raise --limit or narrow with --since"
+}

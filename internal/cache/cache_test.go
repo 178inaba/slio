@@ -171,3 +171,67 @@ func TestPutChannelsCreatesCacheFileOnDisk(t *testing.T) {
 		t.Errorf("stat channels.json: %v", err)
 	}
 }
+
+// v1FixtureFetchedAt is the fetched_at both testdata fixtures carry. The
+// reads below derive their now from it rather than calling time.Now():
+// a fixed timestamp in a file goes stale against a moving clock, and a TTL
+// miss would look just like a decoding failure.
+var v1FixtureFetchedAt = time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+
+// seedFromV1Fixtures copies the cache files a pre-v2 build wrote into a
+// fresh store's directory.
+func seedFromV1Fixtures(t *testing.T) *Store {
+	t.Helper()
+	s := newTestStore(t)
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+		t.Fatalf("create cache directory: %v", err)
+	}
+	for fixture, name := range map[string]string{
+		"channels-v1.json": "channels.json",
+		"users-v1.json":    "users.json",
+	} {
+		b, err := os.ReadFile(filepath.Join("testdata", fixture))
+		if err != nil {
+			t.Fatalf("read %s: %v", fixture, err)
+		}
+		if err := os.WriteFile(filepath.Join(s.dir, name), b, 0o644); err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+	}
+	return s
+}
+
+// The fixtures under testdata are the literal bytes a pre-v2 build wrote,
+// escapes and all. Reading them has to keep working across the encoder
+// change, or an upgrade silently throws away an existing cache.
+func TestReadsChannelsWrittenByAPreV2Build(t *testing.T) {
+	s := seedFromV1Fixtures(t)
+
+	id, ok, err := s.ChannelIDByName("general", v1FixtureFetchedAt.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("ChannelIDByName() error = %v", err)
+	}
+	if !ok || id != "C1" {
+		t.Errorf("ChannelIDByName() = %q, %v, want C1, true", id, ok)
+	}
+}
+
+func TestReadsUsersWrittenByAPreV2Build(t *testing.T) {
+	s := seedFromV1Fixtures(t)
+
+	// Both display names hold characters v1 escaped on the way out, which
+	// is what makes them worth asserting: the escapes have to come back as
+	// the characters they stand for.
+	for userID, want := range map[string]string{
+		"U1": "Alice & Bob",
+		"U2": "<script>",
+	} {
+		name, ok, err := s.UserDisplayName(userID, v1FixtureFetchedAt.Add(time.Hour))
+		if err != nil {
+			t.Fatalf("UserDisplayName(%s) error = %v", userID, err)
+		}
+		if !ok || name != want {
+			t.Errorf("UserDisplayName(%s) = %q, %v, want %q, true", userID, name, ok, want)
+		}
+	}
+}

@@ -213,3 +213,40 @@ func TestResolve(t *testing.T) {
 		})
 	}
 }
+
+// testdata/config-v1.json holds the literal bytes a pre-v2 build wrote,
+// escapes and all. Reading it has to keep working across the encoder
+// change, or an upgrade orphans the profiles someone already registered.
+func TestLoadsFileWrittenByAPreV2Build(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	b, err := os.ReadFile(filepath.Join("testdata", "config-v1.json"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "slio"), 0o700); err != nil {
+		t.Fatalf("create config directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "slio", "config.json"), b, 0o600); err != nil {
+		t.Fatalf("seed config file: %v", err)
+	}
+
+	f, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if f.DefaultProfile != "myws" {
+		t.Errorf("DefaultProfile = %q, want myws", f.DefaultProfile)
+	}
+	// "team&co" is the interesting one: v1 escaped the ampersand, and it
+	// has to come back as a profile name that still resolves.
+	for name, want := range map[string]Profile{
+		"myws":    {Token: "xoxp-1", Host: "myws.slack.com", TeamID: "T1"},
+		"team&co": {Token: "xoxp-2", Host: "team.slack.com", TeamID: "T2"},
+	} {
+		if got := f.Profiles[name]; got != want {
+			t.Errorf("Profiles[%q] = %+v, want %+v", name, got, want)
+		}
+	}
+}
