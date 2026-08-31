@@ -113,7 +113,7 @@ func runHistory(cmd *cobra.Command, args []string, g *globalFlags, limit int, si
 		}
 	}
 
-	return writeMessages(cmd, outFormat, messages, resolver.resolve, notice, "")
+	return format.WriteMessages(cmd.OutOrStdout(), outFormat, messages, resolver.resolve, notice, "")
 }
 
 // parseTimeFlag parses a --since/--until value into a Slack ts bound, or

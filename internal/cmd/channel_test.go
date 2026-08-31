@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/178inaba/slio/internal/cache"
+	"github.com/178inaba/slio/internal/format"
 )
 
 func TestRunChannelListMarkdown(t *testing.T) {
@@ -51,7 +52,7 @@ func TestRunChannelListJSON(t *testing.T) {
 		t.Fatalf("slio channel list --format json: exit code = %d, stderr = %s", code, stderr)
 	}
 
-	var channels []jsonChannel
+	var channels []format.Channel
 	if err := json.Unmarshal([]byte(got), &channels); err != nil {
 		t.Fatalf("unmarshal output: %v; output = %s", err, got)
 	}

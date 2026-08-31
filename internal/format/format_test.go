@@ -1,6 +1,7 @@
 package format
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -11,27 +12,74 @@ func resolverFromMap(m map[string]string) Resolver {
 	return func(id string) string { return m[id] }
 }
 
+// decodeJSONMessages runs WriteMessages in JSON mode and decodes the
+// envelope's message list generically, so a test can assert on individual
+// keys — including their absence, which a typed struct would hide.
+func decodeJSONMessages(t *testing.T, messages []Message, resolveUser Resolver) []map[string]any {
+	t.Helper()
+
+	var buf bytes.Buffer
+	if err := WriteMessages(&buf, JSON, messages, resolveUser, "", ""); err != nil {
+		t.Fatalf("WriteMessages() error = %v", err)
+	}
+	var envelope struct {
+		Messages []map[string]any `json:"messages"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
+		t.Fatalf("unmarshal WriteMessages() output: %v; output = %s", err, buf.String())
+	}
+	return envelope.Messages
+}
+
+// A Format converted from an arbitrary string bypasses Set, so the writers
+// keep their own guard rather than trusting the type — and fall back to
+// neither renderer. Only a direct call can reach it: the flag itself can no
+// longer carry an unknown value.
+func TestWritersRejectUnknownFormat(t *testing.T) {
+	t.Run("messages", func(t *testing.T) {
+		var out bytes.Buffer
+		err := WriteMessages(&out, Format("yaml"), nil, resolverFromMap(nil), "", "")
+		if err == nil || !strings.Contains(err.Error(), "yaml") {
+			t.Fatalf("WriteMessages(yaml) error = %v, want an unsupported-format error naming it", err)
+		}
+		if out.Len() != 0 {
+			t.Errorf("output = %q, want nothing written for an unsupported format", out.String())
+		}
+	})
+
+	t.Run("channels", func(t *testing.T) {
+		var out bytes.Buffer
+		err := WriteChannels(&out, Format("yaml"), nil)
+		if err == nil || !strings.Contains(err.Error(), "yaml") {
+			t.Fatalf("WriteChannels(yaml) error = %v, want an unsupported-format error naming it", err)
+		}
+		if out.Len() != 0 {
+			t.Errorf("output = %q, want nothing written for an unsupported format", out.String())
+		}
+	})
+}
+
 func TestRenderTextMentionResolved(t *testing.T) {
-	got := RenderText("<@U1> hello", resolverFromMap(map[string]string{"U1": "Alice"}))
+	got := renderText("<@U1> hello", resolverFromMap(map[string]string{"U1": "Alice"}))
 	want := "**@Alice** hello"
 	if got != want {
-		t.Errorf("RenderText() = %q, want %q", got, want)
+		t.Errorf("renderText() = %q, want %q", got, want)
 	}
 }
 
 func TestRenderTextMentionUnresolvedWithFallback(t *testing.T) {
-	got := RenderText("<@U1|bob>", resolverFromMap(nil))
+	got := renderText("<@U1|bob>", resolverFromMap(nil))
 	want := "**@bob**"
 	if got != want {
-		t.Errorf("RenderText() = %q, want %q", got, want)
+		t.Errorf("renderText() = %q, want %q", got, want)
 	}
 }
 
 func TestRenderTextMentionUnresolvedNoFallback(t *testing.T) {
-	got := RenderText("<@U1>", resolverFromMap(nil))
+	got := renderText("<@U1>", resolverFromMap(nil))
 	want := "**@U1**"
 	if got != want {
-		t.Errorf("RenderText() = %q, want %q", got, want)
+		t.Errorf("renderText() = %q, want %q", got, want)
 	}
 }
 
@@ -42,70 +90,70 @@ func TestRenderTextMentionWithSpaceInDisplayNameHasUnambiguousBoundary(t *testin
 	// mention ends and the message begins. Wrapping in ** gives it an
 	// explicit, parseable boundary — the same way Slack's own UI
 	// highlights mentions.
-	got := RenderText("<@U1> hurry, let's merge this", resolverFromMap(map[string]string{"U1": "Jordan Example"}))
+	got := renderText("<@U1> hurry, let's merge this", resolverFromMap(map[string]string{"U1": "Jordan Example"}))
 	want := "**@Jordan Example** hurry, let's merge this"
 	if got != want {
-		t.Errorf("RenderText() = %q, want %q", got, want)
+		t.Errorf("renderText() = %q, want %q", got, want)
 	}
 }
 
 func TestRenderTextChannelWithName(t *testing.T) {
-	got := RenderText("<#C1|general>", resolverFromMap(nil))
+	got := renderText("<#C1|general>", resolverFromMap(nil))
 	if got != "#general" {
-		t.Errorf("RenderText() = %q, want #general", got)
+		t.Errorf("renderText() = %q, want #general", got)
 	}
 }
 
 func TestRenderTextChannelWithoutName(t *testing.T) {
-	got := RenderText("<#C1>", resolverFromMap(nil))
+	got := renderText("<#C1>", resolverFromMap(nil))
 	if got != "#C1" {
-		t.Errorf("RenderText() = %q, want #C1", got)
+		t.Errorf("renderText() = %q, want #C1", got)
 	}
 }
 
 func TestRenderTextSpecialMentions(t *testing.T) {
-	got := RenderText("<!here> <!channel> <!everyone>", resolverFromMap(nil))
+	got := renderText("<!here> <!channel> <!everyone>", resolverFromMap(nil))
 	want := "@here @channel @everyone"
 	if got != want {
-		t.Errorf("RenderText() = %q, want %q", got, want)
+		t.Errorf("renderText() = %q, want %q", got, want)
 	}
 }
 
 func TestRenderTextSubteamWithName(t *testing.T) {
-	got := RenderText("<!subteam^S1|@eng>", resolverFromMap(nil))
+	got := renderText("<!subteam^S1|@eng>", resolverFromMap(nil))
 	if got != "**@eng**" {
-		t.Errorf("RenderText() = %q, want **@eng**", got)
+		t.Errorf("renderText() = %q, want **@eng**", got)
 	}
 }
 
 func TestRenderTextSubteamWithoutName(t *testing.T) {
-	got := RenderText("<!subteam^S1>", resolverFromMap(nil))
+	got := renderText("<!subteam^S1>", resolverFromMap(nil))
 	if got != "**@S1**" {
-		t.Errorf("RenderText() = %q, want **@S1**", got)
+		t.Errorf("renderText() = %q, want **@S1**", got)
 	}
 }
 
 func TestRenderTextLink(t *testing.T) {
-	got := RenderText("<https://example.com|Example>", resolverFromMap(nil))
+	got := renderText("<https://example.com|Example>", resolverFromMap(nil))
 	want := "[Example](https://example.com)"
 	if got != want {
-		t.Errorf("RenderText() = %q, want %q", got, want)
+		t.Errorf("renderText() = %q, want %q", got, want)
 	}
 }
 
 func TestRenderTextBareAutolinkUnchanged(t *testing.T) {
 	raw := "<https://example.com>"
-	got := RenderText(raw, resolverFromMap(nil))
+	got := renderText(raw, resolverFromMap(nil))
 	if got != raw {
-		t.Errorf("RenderText() = %q, want unchanged %q", got, raw)
+		t.Errorf("renderText() = %q, want unchanged %q", got, raw)
 	}
 }
 
 func TestRenderTextBoldAndStrike(t *testing.T) {
-	got := RenderText("*bold* and ~strike~", resolverFromMap(nil))
+	got := renderText("*bold* and ~strike~", resolverFromMap(nil))
 	want := "**bold** and ~~strike~~"
 	if got != want {
-		t.Errorf("RenderText() = %q, want %q", got, want)
+		t.Errorf("renderText() = %q, want %q", got, want)
 	}
 }
 
@@ -115,34 +163,34 @@ func TestRenderTextExistingGFMBoldAndStrikeUnchanged(t *testing.T) {
 	// pattern must not match the inner pair and corrupt it into
 	// ***bold***/~~~strike~~~.
 	raw := "already **bold** and ~~struck~~ text"
-	got := RenderText(raw, resolverFromMap(nil))
+	got := renderText(raw, resolverFromMap(nil))
 	if got != raw {
-		t.Errorf("RenderText() = %q, want unchanged %q", got, raw)
+		t.Errorf("renderText() = %q, want unchanged %q", got, raw)
 	}
 }
 
 func TestRenderTextItalicUnchanged(t *testing.T) {
 	raw := "_italic_"
-	got := RenderText(raw, resolverFromMap(nil))
+	got := renderText(raw, resolverFromMap(nil))
 	if got != raw {
-		t.Errorf("RenderText() = %q, want unchanged %q", got, raw)
+		t.Errorf("renderText() = %q, want unchanged %q", got, raw)
 	}
 }
 
 func TestRenderTextEntityUnescape(t *testing.T) {
-	got := RenderText("a &lt;b&gt; &amp; c", resolverFromMap(nil))
+	got := renderText("a &lt;b&gt; &amp; c", resolverFromMap(nil))
 	want := "a <b> & c"
 	if got != want {
-		t.Errorf("RenderText() = %q, want %q", got, want)
+		t.Errorf("renderText() = %q, want %q", got, want)
 	}
 }
 
 func TestRenderTextFencedCodeBlockUntouchedExceptEntities(t *testing.T) {
 	raw := "before\n```\n*not bold* &lt;tag&gt;\n```\nafter"
-	got := RenderText(raw, resolverFromMap(nil))
+	got := renderText(raw, resolverFromMap(nil))
 	want := "before\n```\n*not bold* <tag>\n```\nafter"
 	if got != want {
-		t.Errorf("RenderText() = %q, want %q", got, want)
+		t.Errorf("renderText() = %q, want %q", got, want)
 	}
 }
 
@@ -158,7 +206,7 @@ func TestRenderMarkdownNormalMessage(t *testing.T) {
 		ReplyCount:      3,
 		ThreadPermalink: "https://myws.slack.com/archives/C1/p1234567890123456?thread_ts=1234567890.123456&cid=C1",
 	}
-	got := RenderMarkdown(m, resolverFromMap(map[string]string{"U2": "Bob"}))
+	got := renderMarkdown(m, resolverFromMap(map[string]string{"U2": "Bob"}))
 
 	for _, want := range []string{
 		"Alice", m.Time.Local().Format("2006-01-02 15:04"), "(edited)", "hello **@Bob**",
@@ -166,7 +214,7 @@ func TestRenderMarkdownNormalMessage(t *testing.T) {
 		"https://myws.slack.com/archives/C1/p1234567890123456?thread_ts=1234567890.123456&cid=C1",
 	} {
 		if !strings.Contains(got, want) {
-			t.Errorf("RenderMarkdown() = %q, want it to contain %q", got, want)
+			t.Errorf("renderMarkdown() = %q, want it to contain %q", got, want)
 		}
 	}
 }
@@ -179,13 +227,13 @@ func TestRenderMarkdownSearchMessageShowsPermalinkNotReplyCount(t *testing.T) {
 		Text:      "hello",
 		Permalink: "https://myws.slack.com/archives/C1/p1234567890123456",
 	}
-	got := RenderMarkdown(m, resolverFromMap(nil))
+	got := renderMarkdown(m, resolverFromMap(nil))
 
 	if !strings.Contains(got, "https://myws.slack.com/archives/C1/p1234567890123456") {
-		t.Errorf("RenderMarkdown() = %q, want it to contain the permalink", got)
+		t.Errorf("renderMarkdown() = %q, want it to contain the permalink", got)
 	}
 	if strings.Contains(got, "replies") || strings.Contains(got, "reply") {
-		t.Errorf("RenderMarkdown() = %q, want no reply-count mention", got)
+		t.Errorf("renderMarkdown() = %q, want no reply-count mention", got)
 	}
 }
 
@@ -196,14 +244,14 @@ func TestRenderMarkdownSystemMessageIsOneLine(t *testing.T) {
 		Text:     "Alice has joined the channel",
 		IsSystem: true,
 	}
-	got := RenderMarkdown(m, resolverFromMap(nil))
+	got := renderMarkdown(m, resolverFromMap(nil))
 
 	trimmed := strings.TrimRight(got, "\n")
 	if strings.Contains(trimmed, "\n") {
-		t.Errorf("RenderMarkdown() = %q, want a single line for a system message", got)
+		t.Errorf("renderMarkdown() = %q, want a single line for a system message", got)
 	}
 	if !strings.Contains(got, "Alice has joined the channel") {
-		t.Errorf("RenderMarkdown() = %q, want it to contain the system message text", got)
+		t.Errorf("renderMarkdown() = %q, want it to contain the system message text", got)
 	}
 }
 
@@ -216,7 +264,7 @@ func TestRenderMarkdownLinkedMessageMarksHeaderAfterEdited(t *testing.T) {
 		Edited: true,
 		Linked: true,
 	}
-	got := RenderMarkdown(m, resolverFromMap(nil))
+	got := renderMarkdown(m, resolverFromMap(nil))
 
 	header, _, _ := strings.Cut(got, "\n")
 	// The marker trails the whole header line, so it lands after
@@ -226,8 +274,8 @@ func TestRenderMarkdownLinkedMessageMarksHeaderAfterEdited(t *testing.T) {
 	}
 
 	m.Linked = false
-	if got := RenderMarkdown(m, resolverFromMap(nil)); strings.Contains(got, "linked message") {
-		t.Errorf("RenderMarkdown() = %q, want no marker on an unlinked message", got)
+	if got := renderMarkdown(m, resolverFromMap(nil)); strings.Contains(got, "linked message") {
+		t.Errorf("renderMarkdown() = %q, want no marker on an unlinked message", got)
 	}
 }
 
@@ -239,12 +287,12 @@ func TestRenderMarkdownLinkedSystemMessageMarksOutsideItalics(t *testing.T) {
 		IsSystem: true,
 		Linked:   true,
 	}
-	got := RenderMarkdown(m, resolverFromMap(nil))
+	got := renderMarkdown(m, resolverFromMap(nil))
 
 	// The system line is itself italicized, so the marker has to close
 	// those italics before starting its own.
 	if want := "Alice has joined the channel_ 🎯 _linked message_"; !strings.Contains(got, want) {
-		t.Errorf("RenderMarkdown() = %q, want it to contain %q", got, want)
+		t.Errorf("renderMarkdown() = %q, want it to contain %q", got, want)
 	}
 }
 
@@ -257,15 +305,7 @@ func TestRenderJSONIncludesRawTsAndRendersText(t *testing.T) {
 			Text:   "hi <@U2>",
 		},
 	}
-	data, err := RenderJSON(messages, resolverFromMap(map[string]string{"U2": "Bob"}))
-	if err != nil {
-		t.Fatalf("RenderJSON() error = %v", err)
-	}
-
-	var decoded []map[string]any
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("unmarshal RenderJSON() output: %v", err)
-	}
+	decoded := decodeJSONMessages(t, messages, resolverFromMap(map[string]string{"U2": "Bob"}))
 	if len(decoded) != 1 {
 		t.Fatalf("decoded length = %d, want 1", len(decoded))
 	}
@@ -294,15 +334,7 @@ func TestRenderJSONMarksOnlyTheLinkedMessage(t *testing.T) {
 			Text: "another message",
 		},
 	}
-	data, err := RenderJSON(messages, resolverFromMap(nil))
-	if err != nil {
-		t.Fatalf("RenderJSON() error = %v", err)
-	}
-
-	var decoded []map[string]any
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("unmarshal RenderJSON() output: %v", err)
-	}
+	decoded := decodeJSONMessages(t, messages, resolverFromMap(nil))
 	if len(decoded) != 2 {
 		t.Fatalf("decoded length = %d, want 2", len(decoded))
 	}
@@ -325,22 +357,16 @@ func TestRenderJSONRendersQuotedBlocks(t *testing.T) {
 			QuotedBlocks: []string{"see <@U2> re: *this*"},
 		},
 	}
-	data, err := RenderJSON(messages, resolverFromMap(map[string]string{"U2": "Bob"}))
-	if err != nil {
-		t.Fatalf("RenderJSON() error = %v", err)
+	decoded := decodeJSONMessages(t, messages, resolverFromMap(map[string]string{"U2": "Bob"}))
+	if len(decoded) != 1 {
+		t.Fatalf("decoded length = %d, want 1", len(decoded))
 	}
-
-	var decoded []struct {
-		QuotedBlocks []string `json:"quoted_blocks"`
+	blocks, ok := decoded[0]["quoted_blocks"].([]any)
+	if !ok || len(blocks) != 1 {
+		t.Fatalf("quoted_blocks = %v, want one block", decoded[0]["quoted_blocks"])
 	}
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("unmarshal RenderJSON() output: %v", err)
-	}
-	if len(decoded) != 1 || len(decoded[0].QuotedBlocks) != 1 {
-		t.Fatalf("decoded = %+v, want one message with one quoted block", decoded)
-	}
-	if want := "see **@Bob** re: **this**"; decoded[0].QuotedBlocks[0] != want {
-		t.Errorf("QuotedBlocks[0] = %q, want %q (rendered like message text)", decoded[0].QuotedBlocks[0], want)
+	if want := "see **@Bob** re: **this**"; blocks[0] != want {
+		t.Errorf("quoted_blocks[0] = %v, want %q (rendered like message text)", blocks[0], want)
 	}
 }
 
@@ -352,9 +378,9 @@ func TestRenderMarkdownRendersQuotedBlocks(t *testing.T) {
 		Text:         "hi",
 		QuotedBlocks: []string{"see <@U2> re: *this*"},
 	}
-	got := RenderMarkdown(m, resolverFromMap(map[string]string{"U2": "Bob"}))
+	got := renderMarkdown(m, resolverFromMap(map[string]string{"U2": "Bob"}))
 	if want := "> see **@Bob** re: **this**"; !strings.Contains(got, want) {
-		t.Errorf("RenderMarkdown() = %q, want it to contain %q (mrkdwn rendered in the quoted block)", got, want)
+		t.Errorf("renderMarkdown() = %q, want it to contain %q (mrkdwn rendered in the quoted block)", got, want)
 	}
 }
 
