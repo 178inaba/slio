@@ -1,3 +1,9 @@
+// Package cmd assembles slio's cobra command tree and owns the boundary
+// between the CLI and the outside world: flag and profile resolution, the
+// --timeout deadline every command runs under, and the mapping from a
+// failure to slio's exit codes. Commands write data to stdout and
+// human-facing messages to stderr, so an agent can consume one without
+// the other.
 package cmd
 
 import (
