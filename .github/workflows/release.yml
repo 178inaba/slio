@@ -88,8 +88,8 @@ jobs:
       - name: Move the stable tag
         if: steps.tagpr.outputs.tag != ''
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           TAG: ${{ steps.tagpr.outputs.tag }}
         run: |
           git tag -f stable "$TAG"
-          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" stable
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" stable

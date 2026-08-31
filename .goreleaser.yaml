@@ -15,9 +15,9 @@ builds:
       - amd64
       - arm64
     # The version is only ever embedded here — no constant is committed to
-    # the repository; the file .tagpr names in versionFile holds the plugin
-    # manifest's version, not this one. internal/cmd.resolveVersion covers
-    # the builds that reach it empty.
+    # the repository. The one in .claude-plugin/plugin.json is the plugin's,
+    # not this one. internal/cmd.resolveVersion covers the builds that reach
+    # it empty.
     ldflags:
       - -s -w -X github.com/178inaba/slio/internal/cmd.version={{.Version}}
 
