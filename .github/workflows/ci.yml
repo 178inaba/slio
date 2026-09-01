@@ -39,12 +39,11 @@ jobs:
       - uses: actions/checkout@v7
       # Break one of the four facts below and nothing goes red: this
       # workflow passes, the release job succeeds, and the first signal is a
-      # user whose skill and binary have drifted apart — an old skill against
-      # a newer binary when the plugin stops updating, or a skill from main
-      # describing flags the released binary does not have when the README
-      # install command loses its ref. Bare semver is this repository's own
-      # rule — a lost version falls back to the resolved commit SHA, and a
-      # hand-written v1.0.2 desyncs from the tag tagpr looks for.
+      # user whose skill has drifted from their binary — behind it when the
+      # plugin stops updating, ahead of it when the README install command
+      # loses its ref. Bare semver is this repository's own rule — a lost
+      # version falls back to the resolved commit SHA, and a hand-written
+      # v1.0.2 desyncs from the tag tagpr looks for.
       - name: Assert the plugin distribution invariants
         run: |
           version=$(jq -r '.version // ""' .claude-plugin/plugin.json)
