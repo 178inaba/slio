@@ -54,7 +54,7 @@ jobs:
           jq -e '.plugins[0].source | type == "object" and .ref == "stable"' .claude-plugin/marketplace.json >/dev/null \
             || { echo "::error::the .claude-plugin/marketplace.json plugins entry must resolve through source.ref \"stable\""; exit 1; }
           grep -qF 'npx skills add https://github.com/178inaba/slio/tree/stable' README.md \
-            || { echo "::error::README.md's npx skills install command must name the stable tag in URL form (the 178inaba/slio@stable shorthand does not survive an update)"; exit 1; }
+            || { echo "::error::README.md's npx skills install command must name the stable tag in URL form (the @stable suffix in the shorthand is a skill-name filter, not a ref, so it silently installs from the default branch)"; exit 1; }
       # golangci-lint-action resolves an empty tag — and a `latest` tag — to
       # whatever the newest release is, so a compose.yaml that lost its pin
       # would leave this job green and silently unpinned. Any other malformed
