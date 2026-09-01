@@ -121,7 +121,10 @@ claude plugin install slio@slio
 For other agents, use a skill installer that consumes GitHub repos directly, e.g. [`npx skills`](https://www.npmjs.com/package/skills):
 
 ```sh
-npx skills add 178inaba/slio
+# The URL form is required: the 178inaba/slio@stable shorthand resolves the tag
+# at install time but does not record it, so `npx skills update` silently falls
+# back to the default branch.
+npx skills add https://github.com/178inaba/slio/tree/stable
 ```
 
 ## Development
