@@ -2,13 +2,16 @@ name: Dependabot auto-merge
 
 on: pull_request
 
+# One run per pull request, and unlike CI this never cancels the run in
+# progress: the job approves and then enables auto-merge, so a run killed
+# between the two would leave an approved pull request with no auto-merge on
+# it. There is nothing to save by cancelling either — the job is two API
+# calls.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
-# contents stays read: this job reads nothing from the repository beyond the
-# event payload, and the two writes below are made by the App token rather
-# than by the workflow's own token.
+# contents stays read because this token makes none of the job's writes; the
+# App token below carries them.
 permissions:
   contents: read
 
