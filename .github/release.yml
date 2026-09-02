@@ -2,3 +2,16 @@ changelog:
   exclude:
     labels:
       - tagpr
+  # A PR lands in the first category it matches, so excluding the dependencies
+  # label from the catch-all is what pushes Dependabot PRs into the category
+  # below instead of leaving them mixed into the rest.
+  categories:
+    - title: Changes
+      labels:
+        - "*"
+      exclude:
+        labels:
+          - dependencies
+    - title: Dependency updates
+      labels:
+        - dependencies
