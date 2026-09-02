@@ -2,7 +2,7 @@
 # version: CI reads it out of this file, and Dependabot bumps it here.
 services:
   lint:
-    image: golangci/golangci-lint:v2.13.1
+    image: golangci/golangci-lint:v2.13.2
     entrypoint: ['golangci-lint', 'run']
     volumes:
       - .:/app
