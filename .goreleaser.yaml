@@ -32,6 +32,11 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# The release body is GitHub's generated notes, so what it lists and how it
+# is grouped is configured in .github/release.yml, not here.
+changelog:
+  use: github-native
+
 homebrew_casks:
   - name: slio
     repository:
