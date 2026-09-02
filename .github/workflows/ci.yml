@@ -56,12 +56,18 @@ jobs:
           grep -qF 'npx skills add https://github.com/178inaba/slio/tree/stable' README.md \
             || { echo "::error::README.md's npx skills install command must name the stable tag in URL form (the @stable suffix in the shorthand is a skill-name filter, not a ref, so it silently installs from the default branch)"; exit 1; }
           # The check above only asserts the pinned command is present, so it
-          # passes an editor who adds the shorthand beside it as a shorter
-          # alternative. Anchoring on command lines is what keeps this one off
-          # the comment that names the shorthand to warn against it, and off
-          # the go install line, without having to enumerate either.
-          ! grep -qE '^npx skills add [^ ]*178inaba/slio@' README.md \
-            || { echo "::error::README.md offers the 178inaba/slio@<ref> npx skills shorthand as an install command; keep the pinned URL form as the only one, for the reason in the comment beside it"; exit 1; }
+          # passes an editor who adds a second install line beside it as a
+          # shorter alternative. Every npx skills add line naming this
+          # repository has to be the pinned URL: the @ref shorthand, a bare
+          # 178inaba/slio, and a /tree/main URL all resolve the same silent
+          # way. Keying on command lines rather than on a substring of the
+          # file is what keeps this off the comment beside the command, so
+          # rewording that comment — even into one quoting the bad command —
+          # cannot blind the check.
+          unpinned=$(grep -E '^[[:space:]]*npx skills add .*178inaba/slio' README.md \
+            | grep -vE '^[[:space:]]*npx skills add https://github\.com/178inaba/slio/tree/stable([[:space:]]|$)') || true
+          [[ -z "$unpinned" ]] \
+            || { echo "::error::README.md offers an npx skills install command for this repository that is not the pinned URL form (found: $unpinned) — see the reason in the comment beside the pinned command"; exit 1; }
       # golangci-lint-action resolves an empty tag — and a `latest` tag — to
       # whatever the newest release is, so a compose.yaml that lost its pin
       # would leave this job green and silently unpinned. Any other malformed
