@@ -1,5 +1,14 @@
 # Changelog
 
+## [v1.0.5](https://github.com/178inaba/slio/compare/v1.0.4...v1.0.5) - 2026-09-02
+
+### Changes
+- Pin the npx skills install command to the stable tag by @178inaba in https://github.com/178inaba/slio/pull/58
+- Correct the recorded reason for the npx skills URL form by @178inaba in https://github.com/178inaba/slio/pull/61
+- Assert README's npx skills command is only ever the pinned URL by @178inaba in https://github.com/178inaba/slio/pull/63
+- Take the release body from GitHub's generated notes by @178inaba in https://github.com/178inaba/slio/pull/66
+- Derive the README install URL from the marketplace entry by @178inaba in https://github.com/178inaba/slio/pull/67
+
 ## [v1.0.4](https://github.com/178inaba/slio/compare/v1.0.3...v1.0.4) - 2026-08-31
 
 - Enable revive and adopt the newer standard-library forms Go 1.27 offers by @178inaba in https://github.com/178inaba/slio/pull/54
