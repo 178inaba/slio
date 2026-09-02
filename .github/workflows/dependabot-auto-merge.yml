@@ -1,0 +1,50 @@
+name: Dependabot auto-merge
+
+on: pull_request
+
+# Never cancels the run in progress, unlike CI: the job approves and then
+# enables auto-merge, and a run killed between the two would leave an approved
+# pull request with no auto-merge on it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Gated on the triggering actor rather than the pull request's author: a
+  # commit a person pushes onto a Dependabot branch fires synchronize with that
+  # person as the actor, and an author gate would approve it in their name.
+  auto-merge:
+    name: Auto-merge
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      # The same App the release workflow authenticates as, because
+      # GITHUB_TOKEN can make neither write below. The ruleset requires an
+      # approving review and "Allow GitHub Actions to create and approve pull
+      # requests" is off, so it cannot approve; and a merge that auto-merge
+      # completes on its behalf emits no push event, which would leave Release
+      # — and with it tagpr's release pull request — waiting for the next human
+      # push.
+      #
+      # Workflows Dependabot triggers see Dependabot secrets rather than
+      # Actions secrets, so the private key is registered under this name in
+      # both places. Variables need no counterpart.
+      #
+      #   gh secret set APP_PRIVATE_KEY --app dependabot -R 178inaba/slio < key.pem
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+      # No update-type filter: Test and Lint are the gate, so a major bump that
+      # passes them merges like any other. --merge because the ruleset allows
+      # no other method.
+      - name: Approve and enable auto-merge
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr review --approve "$PR_URL"
+          gh pr merge --auto --merge "$PR_URL"
