@@ -67,7 +67,7 @@ jobs:
           unpinned=$(grep -E '^[[:space:]]*npx skills add .*178inaba/slio' README.md \
             | grep -vE '^[[:space:]]*npx skills add https://github\.com/178inaba/slio/tree/stable([[:space:]]|$)') || true
           [[ -z "$unpinned" ]] \
-            || { echo "::error::README.md offers an npx skills install command for this repository that is not the pinned URL form (found: $unpinned) — see the reason in the comment beside the pinned command"; exit 1; }
+            || { echo "::error::README.md offers an npx skills install command for this repository that is not the pinned URL form (found: ${unpinned//$'\n'/%0A}) — see the reason in the comment beside the pinned command"; exit 1; }
       # golangci-lint-action resolves an empty tag — and a `latest` tag — to
       # whatever the newest release is, so a compose.yaml that lost its pin
       # would leave this job green and silently unpinned. Any other malformed
