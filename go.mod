@@ -3,7 +3,7 @@ module github.com/178inaba/slio
 go 1.27
 
 require (
-	github.com/slack-go/slack v0.27.0
+	github.com/slack-go/slack v0.29.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/term v0.45.0
 )
