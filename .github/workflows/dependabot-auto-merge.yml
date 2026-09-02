@@ -2,59 +2,45 @@ name: Dependabot auto-merge
 
 on: pull_request
 
-# One run per pull request, and unlike CI this never cancels the run in
-# progress: the job approves and then enables auto-merge, so a run killed
-# between the two would leave an approved pull request with no auto-merge on
-# it. There is nothing to save by cancelling either — the job is two API
-# calls.
+# Never cancels the run in progress, unlike CI: the job approves and then
+# enables auto-merge, and a run killed between the two would leave an approved
+# pull request with no auto-merge on it.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
 
-# contents stays read because this token makes none of the job's writes; the
-# App token below carries them.
 permissions:
   contents: read
 
 jobs:
-  # Gated on the triggering actor rather than the pull request's author. A
-  # commit a person pushes onto a Dependabot branch fires synchronize with
-  # that person as the actor, and an author gate would approve it in their
-  # name. An approval and auto-merge from an earlier run survive that push —
-  # the ruleset does not dismiss stale reviews, and a push from someone with
-  # write access does not clear auto-merge — so whoever pushes has taken the
-  # pull request over, and disables auto-merge themselves if they want a
-  # review first.
+  # Gated on the triggering actor rather than the pull request's author: a
+  # commit a person pushes onto a Dependabot branch fires synchronize with that
+  # person as the actor, and an author gate would approve it in their name.
   auto-merge:
     name: Auto-merge
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
-    # No checkout anywhere below: nothing from the pull request head runs here.
     steps:
       # The same App the release workflow authenticates as, because
-      # GITHUB_TOKEN can make neither of the two writes below. The ruleset
-      # requires an approving review and "Allow GitHub Actions to create and
-      # approve pull requests" is off, so it cannot approve. And a merge that
-      # auto-merge completes on its behalf emits no push event, which would
-      # leave Release — and with it tagpr's release pull request — waiting for
-      # the next human push.
+      # GITHUB_TOKEN can make neither write below. The ruleset requires an
+      # approving review and "Allow GitHub Actions to create and approve pull
+      # requests" is off, so it cannot approve; and a merge that auto-merge
+      # completes on its behalf emits no push event, which would leave Release
+      # — and with it tagpr's release pull request — waiting for the next human
+      # push.
       #
       # Workflows Dependabot triggers see Dependabot secrets rather than
       # Actions secrets, so the private key is registered under this name in
-      # both places:
+      # both places. Variables need no counterpart.
       #
       #   gh secret set APP_PRIVATE_KEY --app dependabot -R 178inaba/slio < key.pem
-      #
-      # vars.APP_CLIENT_ID needs no counterpart; variables are readable from
-      # Dependabot-triggered runs as they are. Unlike the release workflow this
-      # needs no owner/repositories: the current repository is the whole scope.
       - uses: actions/create-github-app-token@v3
         id: app-token
         with:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
       # No update-type filter: Test and Lint are the gate, so a major bump that
-      # passes them merges like any other, and one that fails stays open for a
-      # person. --merge because the ruleset allows no other method.
+      # passes them merges like any other. --merge because the ruleset allows
+      # no other method.
       - name: Approve and enable auto-merge
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
