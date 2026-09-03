@@ -1,5 +1,13 @@
 # Changelog
 
+## [v1.0.6](https://github.com/178inaba/slio/compare/v1.0.5...v1.0.6) - 2026-09-02
+
+### Changes
+- Approve and auto-merge Dependabot pull requests by @178inaba in https://github.com/178inaba/slio/pull/69
+### Dependency updates
+- Bump golangci/golangci-lint from v2.13.1 to v2.13.2 by @dependabot[bot] in https://github.com/178inaba/slio/pull/71
+- Bump github.com/slack-go/slack from 0.27.0 to 0.29.0 by @dependabot[bot] in https://github.com/178inaba/slio/pull/72
+
 ## [v1.0.5](https://github.com/178inaba/slio/compare/v1.0.4...v1.0.5) - 2026-09-02
 
 ### Changes

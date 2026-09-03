@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "slio",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Read-only Slack CLI for AI coding agents: fetch threads, channel history, and search results as AI-readable Markdown.",
   "author": {
     "name": "Masahiro Furudate",
