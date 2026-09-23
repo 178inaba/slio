@@ -1,5 +1,10 @@
 # Changelog
 
+## [v1.0.7](https://github.com/178inaba/slio/compare/v1.0.6...v1.0.7) - 2026-09-23
+
+### Dependency updates
+- Bump golang.org/x/term from 0.45.0 to 0.46.0 by @dependabot[bot] in https://github.com/178inaba/slio/pull/73
+
 ## [v1.0.6](https://github.com/178inaba/slio/compare/v1.0.5...v1.0.6) - 2026-09-02
 
 ### Changes
