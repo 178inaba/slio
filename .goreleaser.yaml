@@ -53,7 +53,7 @@ homebrew_casks:
       post:
         # The binary is neither signed nor notarized, so Gatekeeper would
         # refuse to run what the cask just downloaded.
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/slio"]
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/slio"]
           end
