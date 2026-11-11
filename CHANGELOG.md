@@ -1,5 +1,16 @@
 # Changelog
 
+## [v1.0.7](https://github.com/178inaba/slio/compare/v1.0.6...v1.0.7) - 2026-11-11
+
+### Changes
+- Generate the cask's quarantine hook as postflight_steps by @178inaba in https://github.com/178inaba/slio/pull/80
+### Dependency updates
+- Bump golang.org/x/term from 0.45.0 to 0.46.0 by @dependabot[bot] in https://github.com/178inaba/slio/pull/73
+- Bump golangci/golangci-lint from v2.13.2 to v2.14.0 by @dependabot[bot] in https://github.com/178inaba/slio/pull/75
+- Bump github.com/slack-go/slack from 0.29.0 to 0.30.1 by @dependabot[bot] in https://github.com/178inaba/slio/pull/76
+- Bump golangci/golangci-lint from v2.14.0 to v2.15.0 by @dependabot[bot] in https://github.com/178inaba/slio/pull/78
+- Bump golang.org/x/term from 0.46.0 to 0.47.0 by @dependabot[bot] in https://github.com/178inaba/slio/pull/77
+
 ## [v1.0.6](https://github.com/178inaba/slio/compare/v1.0.5...v1.0.6) - 2026-09-02
 
 ### Changes
