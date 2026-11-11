@@ -1,5 +1,10 @@
 # Changelog
 
+## [v1.0.8](https://github.com/178inaba/slio/compare/v1.0.7...v1.0.8) - 2026-11-11
+
+### Dependency updates
+- Bump github.com/slack-go/slack from 0.30.1 to 0.31.0 by @dependabot[bot] in https://github.com/178inaba/slio/pull/81
+
 ## [v1.0.7](https://github.com/178inaba/slio/compare/v1.0.6...v1.0.7) - 2026-11-11
 
 ### Changes
