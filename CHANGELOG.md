@@ -1,5 +1,13 @@
 # Changelog
 
+## [v1.0.8](https://github.com/178inaba/slio/compare/v1.0.7...v1.0.8) - 2026-11-25
+
+### Dependency updates
+- Bump github.com/slack-go/slack from 0.30.1 to 0.31.0 by @dependabot[bot] in https://github.com/178inaba/slio/pull/81
+- Bump github.com/slack-go/slack from 0.31.0 to 0.34.0 by @dependabot[bot] in https://github.com/178inaba/slio/pull/85
+- Bump golang.org/x/term from 0.47.0 to 0.48.0 by @dependabot[bot] in https://github.com/178inaba/slio/pull/86
+- Bump github.com/slack-go/slack from 0.34.0 to 0.35.0 by @dependabot[bot] in https://github.com/178inaba/slio/pull/87
+
 ## [v1.0.7](https://github.com/178inaba/slio/compare/v1.0.6...v1.0.7) - 2026-11-11
 
 ### Changes
